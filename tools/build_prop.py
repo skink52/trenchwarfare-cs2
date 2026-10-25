@@ -2,7 +2,7 @@
 import os, sys, time
 import numpy as np
 from PIL import Image
-import bake, modelio, render
+import bake, modelio, render, stock
 
 OUT = os.environ.get('TW_OUT', os.path.join(os.path.dirname(__file__), '..', 'out', 'addon'))
 PREV = os.path.join(os.path.dirname(__file__), '..', 'preview')
@@ -14,8 +14,9 @@ def build(name, spec, preview=True, cam=None):
     lods = spec['lods']
     m0 = lods[0]
     groups = spec.get('atlases') or {'main': dict(size=spec.get('size', 1024))}
-    # split charts by atlas key
-    chart_atlas = [c.get('atlas', 'main') for c in m0.charts]
+    # split charts by atlas key; charts on stock materials skip the bake
+    smap = spec.get('stock', stock.assign(name))
+    chart_atlas = [('~' + smap[c['mat']]) if c['mat'] in smap else c.get('atlas', 'main') for c in m0.charts]
     rel_dir = 'models/%s/%s' % (ROOT, name)
     mat_rel = 'materials/models/%s/%s' % (ROOT, name)
     os.makedirs(os.path.join(OUT, rel_dir), exist_ok=True)
@@ -52,23 +53,32 @@ def build(name, spec, preview=True, cam=None):
                            backfaces=g.get('backfaces', False))
         vmats[key] = vm
         previews.append((sub, bake.atlas_uv(sub, rects, g['size']), baked))
-    # SMDs: one material name per atlas
+    # SMDs: one material name per atlas, one per stock material (tiling uv per face corner)
     meshes = []
+    skeys = sorted(set(a[1:] for a in chart_atlas if a.startswith('~')))
     for li, m in enumerate(lods):
-        parts = []
+        fuv = uvs[li][m.F]
+        groups_ = []
+        fmat = np.array([smap.get(c['mat'], '') for c in m.charts], object)[m.FC] if len(m.FC) else np.zeros(0, object)
         for key in vmats:
             ids = [i for i, a in enumerate(chart_atlas) if a == key]
-            fsel = np.isin(m.FC, ids)
-            parts.append((key, fsel))
+            groups_.append(('%s_%s' % (name, key), np.isin(m.FC, ids) & (fmat == '')))
+        for sk in skeys:
+            fsel = fmat == sk
+            if fsel.any(): fuv[fsel] = stock.uv_for(m, fsel, sk)
+            groups_.append(('stock_%s' % sk, fsel))
+            if li == 0: previews.append(stock_preview(m, fsel, fuv[fsel], sk))
         mn = '%s_lod%d' % (name, li)
-        write_multi_smd(os.path.join(OUT, rel_dir, mn + '.smd'), m, uvs[li], [(('%s_%s' % (name, k)), s) for k, s in parts])
+        write_multi_smd(os.path.join(OUT, rel_dir, mn + '.smd'), m, fuv, groups_)
         meshes.append(mn)
+    for sk in skeys:
+        vmats['~' + sk] = stock.STOCK[sk]['vmat']
     hull_names = []
     for k, pts in enumerate(spec.get('hulls', [])):
         hn = '%s_hull%d' % (name, k)
         modelio.write_hull_smd(os.path.join(OUT, rel_dir, hn + '.smd'), [pts])
         hull_names.append(hn)
-    remaps = [('%s_%s.vmat' % (name, k), v) for k, v in vmats.items()]
+    remaps = [(('stock_%s.vmat' % k[1:]) if k.startswith('~') else ('%s_%s.vmat' % (name, k)), v) for k, v in vmats.items()]
     txt = modelio.vmdl_text(name, rel_dir, meshes, remaps, hull_names, surface=spec.get('surface', 'default'),
                             lod_thresholds=spec.get('lod_thresholds'), entity='')
     open(os.path.join(OUT, rel_dir, name + '.vmdl'), 'w', newline='\n').write(txt)
@@ -99,15 +109,46 @@ def submesh(m, chart_ids):
     return s
 
 
+_STOCK_PREV = {}
+
+
+def stock_preview(m, fsel, fuv, key):
+    """(mesh, uv, textures) for the turntable: stock faces unshared so each corner keeps its own uv"""
+    import geo
+    if key not in _STOCK_PREV:
+        p = os.path.join('/tmp/claude-0/stockprev', key + '.png')
+        try:
+            if not os.path.exists(p):
+                import vtexread as V
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+                vm = stock.STOCK[key]['vmat']
+                if vm.startswith('materials/models/tw/'):
+                    Image.open(os.path.join(OUT, vm[:-5] + '_color.png')).convert('RGB').resize((512, 512)).save(p)
+                else:
+                    r = [x for x in V.refs(V.vpk_read(vm + '_c')) if '_color' in x][0]
+                    V.decode_vtex(V.vpk_read(r + '_c'), 1).convert('RGB').save(p)
+            col = np.asarray(Image.open(p).convert('RGB'), np.float32) / 255.0
+        except Exception:
+            col = np.full((4, 4, 3), 0.5)
+        h, w = col.shape[:2]
+        _STOCK_PREV[key] = dict(color=col, normal=np.tile([0, 0, 1.0], (h, w, 1)), rough=np.full((h, w), 0.8), ao=np.ones((h, w)), metal=np.zeros((h, w)))
+    F = m.F[fsel]
+    s = geo.Mesh(); s.V = m.V[F].reshape(-1, 3); s.N = m.N[F].reshape(-1, 3); s.T = np.zeros((len(s.V), 2))
+    s.F = np.arange(len(s.V)).reshape(-1, 3)
+    return s, fuv.reshape(-1, 2), _STOCK_PREV[key]
+
+
 def write_multi_smd(path, mesh, uv, groups):
+    """uv: per vertex (nv,2) or per face corner (nf,3,2)"""
     V, N = mesh.V, mesh.N
+    if uv.ndim == 2: uv = uv[mesh.F]
     lines = ["version 1", "nodes", '0 "root" -1', "end", "skeleton", "time 0", "0 0 0 0 0 0 0", "end", "triangles"]
     fmt = "0 %.4f %.4f %.4f %.4f %.4f %.4f %.5f %.5f"
     for matname, fsel in groups:
-        for f in mesh.F[fsel]:
+        for f, fu in zip(mesh.F[fsel], uv[fsel]):
             lines.append(matname)
-            for i in f:
+            for i, t in zip(f, fu):
                 x, y, z = V[i]; nx, ny, nz = N[i]
-                lines.append(fmt % (y, -x, z, ny, -nx, nz, uv[i, 0], 1 - uv[i, 1]))
+                lines.append(fmt % (y, -x, z, ny, -nx, nz, t[0], 1 - t[1]))
     lines.append("end")
     open(path, 'w', newline='\n').write("\n".join(lines) + "\n")

@@ -34,9 +34,14 @@ Done this session (since the first delivery):
   MAP_X/Y + 256, z -700..6400.
 - Bots: infantry only.
 
+- HQ textures (done for trench props): `tools/stock.py` maps chart materials to stock Valve materials per prop (`ASSIGN`); those faces
+  skip the bake and get real-scale tiling UVs per face corner (plank strips / box / cylindrical). In use:
+  boards = `hrts2_wood_floor_boards_02_wet` (4 board strips), rust = `de_overpass/metal/rusty_metal_1`, mud = `hr_ancient_ground_mud_03_wet`,
+  bark = maple bark exported from the game files into `materials/models/tw/stock/bark_maple*` (the stock vmat has wind animation).
+  Still baked: sandbags (no good stock hessian), crates/signs/medical crate (stencils), wrecks, helmets, wire, stretcher canvas.
+  Rejected: palletwood/kasbah planks/cloth01 (legacy vertexlitgeneric, flat normals), maple_tree_bark_1 (F_VERTEX_ANIMATION).
+
 ## Next
-1. HQ textures on fabricated props: map chart materials to stock Valve vmats (tiling UVs from chart w/h), keep baked atlases only for
-   decals/unique parts. Candidates being inspected with vtexread.
 2. Fill the 3D skybox (distant terrain ring, tree lines beyond the map edge) + skybox_reference in the main map.
 3. Script: weapons per team (above), arcade biplane flight.
 4. More detail pass; verify (check_mesh, previews, mock, tsc); zip + bat to `C:\source1\cs2port\assets\tw\`; update project doc.

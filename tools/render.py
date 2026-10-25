@@ -55,8 +55,8 @@ def render(meshes, eye, target, W=900, H=650, fov=40, sun=(-0.4, -0.6, 0.7), bg=
         P = (m.V[Fv] * b[..., None]).sum(1)
         N = (m.N[Fv] * b[..., None]).sum(1); N /= np.linalg.norm(N, axis=1, keepdims=True) + 1e-9
         UV = (uv[Fv] * b[..., None]).sum(1)
-        S = bk['color'].shape[0]
-        px = np.clip((UV[:, 0] * S).astype(int), 0, S - 1); py = np.clip((UV[:, 1] * S).astype(int), 0, S - 1)
+        SH, SW = bk['color'].shape[:2]
+        px = np.floor(UV[:, 0] * SW).astype(int) % SW; py = np.floor(UV[:, 1] * SH).astype(int) % SH
         col = bk['color'][py, px]; nm = bk['normal'][py, px]; ro = bk['rough'][py, px]; ao = bk['ao'][py, px]; me = bk['metal'][py, px]
         # tangent frame per face from uv derivatives
         p0, p1, p2 = m.V[Fv[:, 0]], m.V[Fv[:, 1]], m.V[Fv[:, 2]]
