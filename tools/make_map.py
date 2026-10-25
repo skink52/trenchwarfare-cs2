@@ -618,6 +618,10 @@ for s in (-1, 1):
           targetname='air_probe_%d' % (s + 1))
 clone('env_soundscape', (0, 0, 300), radius='12000', soundscape='Nothing', enablesoundevent='1', soundevent='tw.amb.front')
 
+# ---------------------------------------------------------------- 3D skybox (maps/mg_trenchwarfare_3dskybox.vmap, sky_camera at its origin, scale 16)
+ent('skybox_reference', (0, 0, -12000), group=GROUP, targetname='tw_skybox', targetMapName='maps/%s_3dskybox.vmap' % NAME,
+    fixupNames='1', worldGroupID='skyboxWorldGroup0')
+
 # ---------------------------------------------------------------- sky shell, vis hints, nav seeds, minimap bounds
 SX, SY = LY.MAP_X + 256, LY.MAP_Y + 256
 vmesh.mesh_node(vmesh.box_mesh(-SX, -SY, LY.SKY_Z0, SX, SY, LY.SKY_Z1, SKY, inward=True), GROUP, bake=False, shadows=False)

@@ -41,6 +41,13 @@ Done this session (since the first delivery):
   Still baked: sandbags (no good stock hessian), crates/signs/medical crate (stencils), wrecks, helmets, wire, stretcher canvas.
   Rejected: palletwood/kasbah planks/cloth01 (legacy vertexlitgeneric, flat normals), maple_tree_bark_1 (F_VERTEX_ANIMATION).
 
+- 3D skybox: `tools/make_skybox.py <user skybox vmap> out/addon/maps/mg_trenchwarfare_3dskybox.vmap` (terrain ring beyond the map edge
+  at 1/16, ~4000 vista poplars/maples). Main map gets `skybox_reference` at (0,0,-12000) -> maps/mg_trenchwarfare_3dskybox.vmap (generated).
+- Script (WIP, NOT yet run through test/mock.mjs or tsc): per-team weapons, RIFLE_MAG emulation removed, arcade flight added
+  (startFlight/endFlight/tickAir/tickBombs, OnBulletImpact on `tw_plane_<t|ct>_N` prop_dynamics, CustomCamera FOLLOW_POSITION chase cam).
+  Still to do for flight: map entities `tw_plane_<tag>_1..5` (prop_dynamic, `_dyn.vmdl` copies of the ext plane models with
+  model_archetype "" ; nose is model -x), mock stubs (Move, GetCustomCamera, OnBulletImpact, ground-aware TraceLine), then tests.
+
 ## Next
 2. Fill the 3D skybox (distant terrain ring, tree lines beyond the map edge) + skybox_reference in the main map.
 3. Script: weapons per team (above), arcade biplane flight.

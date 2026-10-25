@@ -15,7 +15,7 @@
 //   tw_hud (custom_hud_layout), tw_boom_fx_N / tw_dirt_fx_N / tw_boom_snd_N / tw_whistle_snd_N / tw_shake_N (effect pools),
 //   tw_launch_snd_<tag>_K / tw_launch_fx_<tag>_K (per mortar pit)
 
-import { Instance, CSInputs, CSMoveType, CSDamageTypes } from "cs_script/point_script";
+import { Instance, CSInputs, CSMoveType, CSDamageTypes, CustomCameraMode } from "cs_script/point_script";
 
 // ------------------------------------------------------------------ settings
 const CONFIG = {
@@ -25,11 +25,13 @@ const CONFIG = {
   MORTAR_CHANCE: 0.4,        // chance a new player is put on a mortar crew (if a seat is free)
   ROTATE_CHANCE: 0.12,       // on respawn, chance to be moved to the other ground role ("a taste of everything")
   CREWS: 5,
-  INF_RIFLE: "weapon_ssg08",
-  INF_PISTOL: "weapon_p250",
-  RIFLE_MAG: { 2: 5, 3: 10 },          // T = Gewehr 98 (5), CT = Lee-Enfield (10)
+  // WW1 weapons come from the addon's weapons.vdata (models, magazines): T Gewehr 98 = weapon_awp, Luger = weapon_glock;
+  // CT Lee-Enfield = weapon_ssg08, Colt M1911 = weapon_hkp2000. Streak upgrade: T Mondragon = weapon_g3sg1, CT Lewis gun = weapon_scar20.
+  INF_RIFLE: { 2: "weapon_awp", 3: "weapon_ssg08" },
+  INF_PISTOL: { 2: "weapon_glock", 3: "weapon_hkp2000" },
   STREAK_UPGRADE: 3,                   // kills without dying -> upgrade
-  UPGRADE: { 2: ["weapon_awp", "weapon_g3sg1"], 3: ["weapon_awp", "weapon_scar20"] },
+  UPGRADE: { 2: "weapon_g3sg1", 3: "weapon_scar20" },
+  RIFLE_NAME: { 2: "Gewehr 98", 3: "Lee-Enfield" }, UPGRADE_NAME: { 2: "Mondragon self-loader", 3: "Lewis gun" },
   INF_ARMOR: 50,
   HEAL_RADIUS: 120, HEAL_HP_PER_S: 12, HEAL_ARMOR_PER_S: 25,
   STATION_RADIUS: 72,
@@ -43,7 +45,19 @@ const CONFIG = {
   MORTAR_FIRE_ANIM: "fire",
   FRIENDLY_SPLASH: false,
   POOL: 12,
-  AIR_ENABLED: false, AIR_SLOTS: 5, AIR_LIVES: 2, AIR_CHECK: 30,
+  AIR_ENABLED: true, AIR_SLOTS: 5, AIR_LIVES: 2, AIR_CHECK: 30,
+  // arcade flight (mouse aim: the plane turns toward where the pilot looks; W/S throttle, LMB guns, RMB bomb, E bail-out view reset)
+  AIR: {
+    SPAWN_ALT: 1100, V_STALL: 420, V_MIN: 520, V_CRUISE: 1150, V_MAX: 1650, ACCEL: 0.6, DIVE_GAIN: 520,
+    TURN: 75, TURN_SLOW: 0.45, BANK_MAX: 65, ROLL_SIGN: -1, MODEL_YAW: 180,     // models' noses point at -x
+    BOX_X: 6500, BOX_Y: 5500, ALT_MAX: 5000, ALT_MIN: 120,
+    GUN_INTERVAL: 0.09, GUN_DAMAGE: 16, GUN_RANGE: 5200, GUN_SPREAD: 0.014, GUN_FROM: 150,
+    BOMBS: 2, BOMB_REARM: 18, BOMB_RADIUS: 420, BOMB_DAMAGE: 240, GRAVITY: 800,
+    HIT_SCALE: 0.4, HIT_MIN: 12,                 // rifle bullets on a plane: weapon damage x scale (at least HIT_MIN) to the pilot
+    CRASH_CREDIT: 10,                            // seconds a hit keeps kill credit for a crash
+    CAM_FOLLOW: { x: 0, y: 0, z: 70 }, CAM_OFFSET: { x: -380, y: 0, z: 70 },
+    PILOT: { back: 20, up: 0 },                  // pilot pawn relative to the plane origin (cockpit)
+  },
   CVARS: ["mp_respawn_on_death_t 1", "mp_respawn_on_death_ct 1", "mp_respawn_immunitytime 0", "mp_freezetime 0",
           "mp_roundtime 60", "mp_buy_anywhere 0", "mp_buytime 0", "mp_death_drop_gun 0", "mp_weapons_allow_map_placed 1",
           "mp_free_armor 0", "mp_solid_teammates 1", "bot_quota_mode normal"],
@@ -79,12 +93,13 @@ function findList(prefix, max) {
   return out;
 }
 function loadPoints() {
-  points = { trench: {}, heal: {}, plane: {}, pit: {}, seatA: {}, seatB: {} };
+  points = { trench: {}, heal: {}, plane: {}, pit: {}, seatA: {}, seatB: {}, aircraft: {} };
   for (const team of [T, CT]) {
     const tg = tagOf(team);
     points.trench[team] = findList("trench_" + tg + "_", 64).map(e => ({ pos: e.GetAbsOrigin(), ang: e.GetAbsAngles(), used: 0 }));
     points.heal[team] = findList("heal_" + tg + "_", 16).map(e => e.GetAbsOrigin());
     points.plane[team] = findList("plane_" + tg + "_", 16).map(e => ({ pos: e.GetAbsOrigin(), ang: e.GetAbsAngles() }));
+    points.aircraft[team] = findList("tw_plane_" + tg + "_", 16).map(e => ({ ent: e, park: e.GetAbsOrigin(), parkAng: e.GetAbsAngles(), pilot: -1 }));
     points.pit[team] = []; points.seatA[team] = []; points.seatB[team] = [];
     for (let k = 1; k <= CONFIG.CREWS; k++) {
       const pit = live(Instance.FindEntityByName("mortarpit_" + tg + "_" + k)) || live(Instance.FindEntityByName("mortar_" + tg + "_" + k));
@@ -96,7 +111,7 @@ function loadPoints() {
     }
   }
   const n = (o) => o[T].length + "/" + o[CT].length;
-  Instance.Msg("[tw] points: trench " + n(points.trench) + ", heal " + n(points.heal) + ", planes " + n(points.plane));
+  Instance.Msg("[tw] points: trench " + n(points.trench) + ", heal " + n(points.heal) + ", plane spawns " + n(points.plane) + ", aircraft " + n(points.aircraft));
 }
 
 // ------------------------------------------------------------------ state
@@ -240,9 +255,10 @@ function airCheck() {
 function equip(p, pawn) {
   try { pawn.DestroyWeapons(); } catch (e) {}
   pawn.GiveNamedItem("weapon_knife", false);
-  pawn.GiveNamedItem(CONFIG.INF_PISTOL, false);
+  const team = pawn.GetTeamNumber();
+  if (p.role !== "air") pawn.GiveNamedItem(CONFIG.INF_PISTOL[team] || "weapon_p250", false);
   if (p.role === "infantry") {
-    pawn.GiveNamedItem(CONFIG.INF_RIFLE, true);
+    pawn.GiveNamedItem(CONFIG.INF_RIFLE[team] || "weapon_ssg08", true);
     pawn.SetArmor(CONFIG.INF_ARMOR); pawn.SetHasHelmet(false);
   } else {
     pawn.SetArmor(100); pawn.SetHasHelmet(true);
@@ -292,10 +308,174 @@ function deploy(p, pawn) {
     try { pawn.SetEyeAngles(dest.ang); } catch (e) {}
   }
   p.deployed = true;
+  if (p.role === "air" && !startFlight(p, pawn, dest)) { setRole(p, "infantry", team); deploy(p, pawn); return; }
   const sub = p.role === "infantry" ? "Hold the fire trench. Dressing stations heal you." :
               p.role === "mortar" ? "Crew " + (p.crew + 1) + ": plot at the table, fetch bombs, load and fire." :
-              "Biplanes are on their way - stand by.";
+              "Mouse to steer, W/S throttle, LMB guns, RMB bomb. " + p.lives + " lives.";
   banner(p, ROLE_NAME[p.role], sub, 5);
+}
+
+// ------------------------------------------------------------------ aircraft (arcade, mouse aim)
+const bombs = [];
+function vadd(a, b, k) { return v3(a.x + b.x * k, a.y + b.y * k, a.z + b.z * k); }
+function vlen(a) { return Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z); }
+function vnorm(a) { const l = vlen(a) || 1; return v3(a.x / l, a.y / l, a.z / l); }
+function vdot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+function dirOf(ang) {
+  const p = ang.pitch * Math.PI / 180, y = ang.yaw * Math.PI / 180;
+  return v3(Math.cos(p) * Math.cos(y), Math.cos(p) * Math.sin(y), -Math.sin(p));
+}
+function turnToward(f, d, maxRad) {
+  const c = Math.max(-1, Math.min(1, vdot(f, d))); const a = Math.acos(c);
+  if (a <= maxRad || a < 1e-4) return vnorm(d);
+  const t = maxRad / a;                               // slerp step
+  const s = Math.sin(a);
+  return vnorm(vadd(v3(f.x * Math.sin((1 - t) * a) / s, f.y * Math.sin((1 - t) * a) / s, f.z * Math.sin((1 - t) * a) / s), d, Math.sin(t * a) / s));
+}
+function planeOfEntity(e) {
+  if (!e || !points) return undefined;
+  let nm = ""; try { nm = e.GetEntityName(); } catch (err) { return undefined; }
+  if (!nm.startsWith("tw_plane_")) return undefined;
+  for (const team of [T, CT]) for (const a of points.aircraft[team] || []) if (a.ent === e || a.ent.GetEntityName() === nm) return a;
+  return undefined;
+}
+function startFlight(p, pawn, dest) {
+  const team = pawn.GetTeamNumber();
+  const list = (points.aircraft[team] || []).filter(a => live(a.ent));
+  const ac = list.find(a => a.pilot === p.slot) || list.find(a => a.pilot < 0);
+  if (!ac) { toast(p, "No aircraft free - back to the trenches", 4); return false; }
+  ac.pilot = p.slot;
+  const A = CONFIG.AIR;
+  const base = dest ? dest.pos : ac.park;
+  const f = v3(team === CT ? -1 : 1, 0, 0);
+  p.air = { ac, pos: v3(base.x, base.y, base.z + A.SPAWN_ALT), f, speed: A.V_CRUISE * 0.9, throttle: 0.7, bank: 0, yawRate: 0,
+            nextGun: 0, bombs: A.BOMBS, rearmAt: 0, lastHitBy: -1, lastHitAt: -99, warned: 0 };
+  try { pawn.DestroyWeapons(); pawn.GiveNamedItem("weapon_knife", false); } catch (e) {}
+  try { pawn.SetMoveType(CSMoveType.NONE); } catch (e) {}
+  try { pawn.SetEyeAngles({ pitch: 0, yaw: team === CT ? 180 : 0, roll: 0 }); } catch (e) {}
+  placePlane(p, pawn, true);
+  try {
+    const cam = pawn.GetCustomCamera();
+    if (cam) {
+      cam.SetFollowConfig({ followEntity: ac.ent, followOffset: A.CAM_FOLLOW, cameraOffset: A.CAM_OFFSET, clipCameraOffset: true, cameraOffsetReturnStrength: 0.2 });
+      cam.SetMode(CustomCameraMode.FOLLOW_POSITION);
+    }
+  } catch (e) {}
+  return true;
+}
+function endFlight(p, pawn, crashed) {
+  const a = p.air; if (!a) return;
+  p.air = undefined;
+  if (crashed) impact({ team: p.team, k: -1, firerSlot: a.lastHitBy >= 0 && now() - a.lastHitAt < CONFIG.AIR.CRASH_CREDIT ? a.lastHitBy : p.slot,
+                        x: a.pos.x, y: a.pos.y, z: a.pos.z, radius: 260, damage: 60 });
+  if (live(a.ac.ent)) a.ac.ent.Teleport({ position: a.ac.park, angles: a.ac.parkAng, velocity: v3(0, 0, 0) });
+  a.ac.pilot = -1;
+  if (pawn && live(pawn)) {
+    try { const cam = pawn.GetCustomCamera(); if (cam) cam.SetMode(CustomCameraMode.DISABLED); } catch (e) {}
+    try { if (pawn.IsAlive()) pawn.SetMoveType(CSMoveType.WALK); } catch (e) {}
+  }
+}
+function placePlane(p, pawn, snap) {
+  const a = p.air, A = CONFIG.AIR, f = a.f;
+  const yaw = Math.atan2(f.y, f.x) * 180 / Math.PI, pitch = Math.asin(Math.max(-1, Math.min(1, f.z))) * 180 / Math.PI;
+  const ang = { pitch: pitch, yaw: yaw + A.MODEL_YAW, roll: A.ROLL_SIGN * a.bank };
+  const vel = v3(f.x * a.speed, f.y * a.speed, f.z * a.speed);
+  if (snap) a.ac.ent.Teleport({ position: a.pos, angles: ang, velocity: vel });
+  else a.ac.ent.Move({ position: a.pos, angles: ang, velocity: vel });
+  const hp = v3(a.pos.x - f.x * A.PILOT.back, a.pos.y - f.y * A.PILOT.back, a.pos.z + A.PILOT.up);
+  if (snap) pawn.Teleport({ position: hp, velocity: vel }); else pawn.Move({ position: hp, velocity: vel });
+}
+function crashPilot(p, pawn) {
+  const a = p.air;
+  const killer = a.lastHitBy >= 0 && now() - a.lastHitAt < CONFIG.AIR.CRASH_CREDIT ? pawnOf(a.lastHitBy) : undefined;
+  endFlight(p, pawn, true);
+  try { pawn.TakeDamage({ damage: 1000, damageTypes: CSDamageTypes.BLAST, attacker: killer || pawn, inflictor: killer || pawn }); } catch (e) {}
+}
+function hitPilot(ac, damage, attackerPawn) {
+  if (!ac || ac.pilot < 0) return;
+  const vp = pawnOf(ac.pilot); const p = players.get(ac.pilot);
+  if (!vp || !vp.IsAlive() || !p || !p.air) return;
+  if (attackerPawn && attackerPawn.GetTeamNumber() === vp.GetTeamNumber()) return;
+  const as = attackerPawn ? slotOfPawn(attackerPawn) : -1;
+  if (as >= 0) { p.air.lastHitBy = as; p.air.lastHitAt = now(); }
+  try { vp.TakeDamage({ damage, attacker: attackerPawn, inflictor: attackerPawn }); } catch (e) {}
+}
+function tickAir(p, pawn, dt, pressed, held) {
+  const a = p.air, A = CONFIG.AIR, t = now();
+  if (!live(a.ac.ent)) { endFlight(p, pawn, false); return ""; }
+  if (held & CSInputs.FORWARD) a.throttle = Math.min(1, a.throttle + A.ACCEL * dt);
+  if (held & CSInputs.BACK) a.throttle = Math.max(0, a.throttle - A.ACCEL * dt);
+  // desired direction: where the pilot looks, pulled back toward the front when leaving the box
+  let d = dirOf(pawn.GetEyeAngles());
+  let prompt = "";
+  const out = Math.max(Math.abs(a.pos.x) - A.BOX_X, Math.abs(a.pos.y) - A.BOX_Y, 0);
+  if (out > 0) { d = vnorm(vadd(d, vnorm(v3(-a.pos.x, -a.pos.y, 0)), 1 + out / 400)); prompt = "Leaving the front - turning back"; }
+  if (a.pos.z > A.ALT_MAX) { d = vnorm(v3(d.x, d.y, Math.min(d.z, -0.2))); prompt = "Too high - engine starving"; }
+  if (a.speed < A.V_STALL) { d = vnorm(v3(d.x, d.y, Math.min(d.z, -0.5))); prompt = "STALL - nose down"; }
+  const gz = groundZ(a.pos.x, a.pos.y);
+  if (a.pos.z - gz < 260 && d.z < 0.15) { d = vnorm(v3(d.x, d.y, 0.15)); if (!prompt) prompt = "PULL UP"; }
+  // turn rate falls off at low speed
+  const k = Math.max(A.TURN_SLOW, Math.min(1.15, a.speed / A.V_CRUISE));
+  const f0 = a.f;
+  a.f = turnToward(a.f, d, A.TURN * k * Math.PI / 180 * dt);
+  const yaw0 = Math.atan2(f0.y, f0.x), yaw1 = Math.atan2(a.f.y, a.f.x);
+  let dy = yaw1 - yaw0; if (dy > Math.PI) dy -= 2 * Math.PI; if (dy < -Math.PI) dy += 2 * Math.PI;
+  a.yawRate = a.yawRate * 0.85 + (dy / Math.max(dt, 1e-3)) * 0.15;
+  const bankT = Math.max(-A.BANK_MAX, Math.min(A.BANK_MAX, a.yawRate * 180 / Math.PI * 0.9));
+  a.bank += (bankT - a.bank) * Math.min(1, dt * 4);
+  // speed: throttle target, gravity along the flight path
+  const target = A.V_MIN + (A.V_MAX - A.V_MIN) * a.throttle;
+  a.speed += (target - a.speed) * Math.min(1, dt * 0.6) - A.DIVE_GAIN * a.f.z * dt;
+  a.speed = Math.max(A.V_STALL * 0.7, Math.min(A.V_MAX * 1.25, a.speed));
+  const np = vadd(a.pos, a.f, a.speed * dt);
+  // collision with the world along the step, or the ground
+  const tr = Instance.TraceLine({ start: a.pos, end: np, ignoreEntity: [a.ac.ent, pawn], ignorePlayers: true });
+  if ((tr && tr.didHit && !tr.startedInSolid) || np.z < gz + A.ALT_MIN * 0.25) { crashPilot(p, pawn); return ""; }
+  a.pos = np;
+  placePlane(p, pawn, false);
+  // guns
+  if ((held & CSInputs.ATTACK) && t >= a.nextGun) {
+    a.nextGun = t + A.GUN_INTERVAL;
+    const s = v3(a.pos.x + a.f.x * A.GUN_FROM, a.pos.y + a.f.y * A.GUN_FROM, a.pos.z + 40 + a.f.z * A.GUN_FROM);
+    const dir = vnorm(v3(a.f.x + gauss() * A.GUN_SPREAD, a.f.y + gauss() * A.GUN_SPREAD, a.f.z + gauss() * A.GUN_SPREAD));
+    const g = Instance.TraceLine({ start: s, end: vadd(s, dir, A.GUN_RANGE), ignoreEntity: [a.ac.ent, pawn], traceHitboxes: true });
+    if (g && g.didHit && g.hitEntity) {
+      const he = g.hitEntity;
+      const ac = planeOfEntity(he);
+      if (ac) hitPilot(ac, A.GUN_DAMAGE * 1.5, pawn);
+      else {
+        const hp = toPawn(he);
+        if (hp && hp.IsAlive() && hp.GetTeamNumber() !== pawn.GetTeamNumber()) { try { hp.TakeDamage({ damage: A.GUN_DAMAGE, attacker: pawn, inflictor: pawn }); } catch (e) {} }
+      }
+    }
+  }
+  // bombs
+  if (a.bombs < A.BOMBS && t >= a.rearmAt) { a.bombs++; a.rearmAt = t + A.BOMB_REARM; }
+  if ((pressed & CSInputs.ATTACK2) && a.bombs > 0) {
+    a.bombs--; if (a.rearmAt < t) a.rearmAt = t + A.BOMB_REARM;
+    bombs.push({ pos: v3(a.pos.x, a.pos.y, a.pos.z - 20), vel: v3(a.f.x * a.speed, a.f.y * a.speed, a.f.z * a.speed), team: pawn.GetTeamNumber(), slot: p.slot });
+    toast(p, "Bomb away!", 1.5);
+  }
+  hText(p, "tw_st_role", "AIRCREW");
+  hText(p, "tw_st_l1", "Speed " + Math.round(a.speed * 0.0254 * 3.6) + " km/h   Alt " + Math.round((a.pos.z - gz) * 0.0254) + " m   Throttle " + Math.round(a.throttle * 100) + "%");
+  hText(p, "tw_st_l2", "Bombs " + a.bombs + "/" + A.BOMBS + (a.bombs < A.BOMBS ? "  (rearm " + Math.max(0, a.rearmAt - t).toFixed(0) + "s)" : ""));
+  hText(p, "tw_st_l3", "Lives " + p.lives + "   Kills " + p.kills);
+  hClass(p, "tw_status", "show", true);
+  return prompt;
+}
+function tickBombs(dt) {
+  const A = CONFIG.AIR;
+  for (let i = bombs.length - 1; i >= 0; i--) {
+    const b = bombs[i];
+    b.vel.z -= A.GRAVITY * dt;
+    const np = vadd(b.pos, b.vel, dt);
+    const tr = Instance.TraceLine({ start: b.pos, end: np, ignorePlayers: true });
+    if (tr && tr.didHit) {
+      bombs.splice(i, 1);
+      impact({ team: b.team, k: -1, firerSlot: b.slot, x: tr.end.x, y: tr.end.y, z: tr.end.z, radius: A.BOMB_RADIUS, damage: A.BOMB_DAMAGE });
+    } else if (np.z < -2000) bombs.splice(i, 1);
+    else b.pos = np;
+  }
 }
 
 // ------------------------------------------------------------------ mortars
@@ -333,7 +513,7 @@ function fireMortar(team, k, firerSlot) {
   return true;
 }
 function impact(sh) {
-  const z = groundZ(sh.x, sh.y);
+  const z = sh.z !== undefined ? sh.z : groundZ(sh.x, sh.y);
   const pos = v3(sh.x, sh.y, z + 8);
   const i = (poolIdx++ % CONFIG.POOL) + 1;
   for (const nm of ["tw_boom_fx_", "tw_dirt_fx_", "tw_boom_snd_", "tw_shake_"]) {
@@ -343,8 +523,8 @@ function impact(sh) {
   fire("tw_dirt_fx_" + i, "Stop"); fire("tw_dirt_fx_" + i, "Start", undefined, 0.02);
   fire("tw_boom_snd_" + i, "StartSound", undefined, 0.02);
   fire("tw_shake_" + i, "StartShake", undefined, 0.02);
-  const c = crews[sh.team][sh.k];
-  c.impacts.unshift({ x: sh.x, y: sh.y }); if (c.impacts.length > 3) c.impacts.length = 3;
+  if (sh.k >= 0) { const c = crews[sh.team][sh.k]; c.impacts.unshift({ x: sh.x, y: sh.y }); if (c.impacts.length > 3) c.impacts.length = 3; }
+  const R = sh.radius || CONFIG.SHELL_RADIUS, DMG = sh.damage || CONFIG.SHELL_DAMAGE;
   // damage: credited to whoever fired
   const firer = pawnOf(sh.firerSlot);
   for (let s = 0; s < 64; s++) {
@@ -355,11 +535,11 @@ function impact(sh) {
     if (team === sh.team && !CONFIG.FRIENDLY_SPLASH) continue;
     const o = pawn.GetAbsOrigin(); const chest = v3(o.x, o.y, o.z + 40);
     const d = dist3(chest, pos);
-    if (d > CONFIG.SHELL_RADIUS) continue;
-    let k = Math.pow(1 - d / CONFIG.SHELL_RADIUS, 1.2);
+    if (d > R) continue;
+    let k = Math.pow(1 - d / R, 1.2);
     const tr = Instance.TraceLine({ start: v3(pos.x, pos.y, pos.z + 16), end: chest, ignorePlayers: true });
     if (tr && tr.didHit && tr.fraction < 0.98) k *= CONFIG.TRENCH_COVER;
-    const dmg = CONFIG.SHELL_DAMAGE * k;
+    const dmg = DMG * k;
     if (dmg < 1) continue;
     try { pawn.TakeDamage({ damage: dmg, damageTypes: CSDamageTypes.BLAST, attacker: firer, inflictor: firer }); } catch (e) {}
   }
@@ -488,13 +668,14 @@ function think() {
   const t = now(); const dt = Math.min(0.1, Math.max(0, t - lastTick)); lastTick = t;
   if (!points) loadPoints();
   tickShells();
+  tickBombs(dt);
   airCheck();
   for (let s = 0; s < 64; s++) {
     const ctl = Instance.GetPlayerController(s);
     if (!ctl) continue;
     const pawn = live(ctl.GetPlayerPawn());
     const p = P(s);
-    if (!pawn || !pawn.IsAlive()) { if (p.inSight) leaveSight(p, pawn); hClass(p, "tw_target", "show", false); hClass(p, "tw_prompt", "show", false); continue; }
+    if (!pawn || !pawn.IsAlive()) { if (p.air) endFlight(p, pawn, true); if (p.inSight) leaveSight(p, pawn); hClass(p, "tw_target", "show", false); hClass(p, "tw_prompt", "show", false); continue; }
     const team = pawn.GetTeamNumber();
     if (team !== T && team !== CT) continue;
     if (p.team !== team) { leaveSeat(p); p.role = null; p.team = team; p.deployed = false; p.deployAt = t + CONFIG.LOBBY_FIRST; }
@@ -506,17 +687,17 @@ function think() {
       hText(p, "tw_brief_role", ROLE_NAME[p.role] || "");
       const lines = p.role === "mortar" ? ["Crew " + (p.crew + 1) + " of " + CONFIG.CREWS + ". Plot targets at the map table,", "fetch bombs from the ammunition box,", "load and fire the mortar. Swap jobs freely."]
         : p.role === "air" ? ["Report to the aerodrome.", "Limited lives - then back to the trenches.", ""]
-        : ["Hold the fire trench. Bolt-action rifle, P250, knife.", "3 kills without dying earns an AWP or an auto-rifle.", "Dressing stations in the support trench heal you."];
+        : ["Hold the fire trench. " + CONFIG.RIFLE_NAME[team] + ", pistol, knife.", CONFIG.STREAK_UPGRADE + " kills without dying earns a " + CONFIG.UPGRADE_NAME[team] + ".", "Dressing stations in the support trench heal you."];
       hText(p, "tw_brief_l1", lines[0]); hText(p, "tw_brief_l2", lines[1]); hText(p, "tw_brief_l3", lines[2]);
       hText(p, "tw_brief_count", "Moving up in " + Math.max(0, p.deployAt - t).toFixed(0) + "s   (chat: !mortar  !infantry  !roles)");
       if (t >= p.deployAt) { hClass(p, "tw_brief", "show", false); p.first = false; deploy(p, pawn); }
       continue;
     }
-    // infantry: rifle magazine size, dressing stations
-    if (p.role === "infantry") {
-      const w = pawn.FindWeapon(CONFIG.INF_RIFLE);
-      const mag = CONFIG.RIFLE_MAG[team] || 10;
-      if (w) { try { const cl = w.GetClipAmmo(); if (cl > mag) { w.SetReserveAmmo(w.GetReserveAmmo() + cl - mag); w.SetClipAmmo(mag); } } catch (e) {} }
+    if (p.air) {
+      const pr = tickAir(p, pawn, dt, pressed, held);
+      hText(p, "tw_prompt_text", pr); hClass(p, "tw_prompt", "show", !!pr);
+      hClass(p, "tw_toast", "show", t < p.toastUntil); hClass(p, "tw_banner", "show", t < p.bannerUntil);
+      continue;
     }
     p.healing = false;
     const hp = points.heal[team] || [];
@@ -548,7 +729,7 @@ function think() {
     hClass(p, "tw_status", "show", true);
     hText(p, "tw_st_role", ROLE_NAME[p.role] || "");
     if (p.role === "infantry") {
-      hText(p, "tw_st_l1", "Rifle: " + (team === T ? "Gewehr 98 (5 rounds)" : "Lee-Enfield (10 rounds)"));
+      hText(p, "tw_st_l1", "Rifle: " + (p.upgraded ? CONFIG.UPGRADE_NAME[team] : CONFIG.RIFLE_NAME[team]));
       hText(p, "tw_st_l2", p.upgraded ? "Marksman: upgrade issued" : "Streak " + p.streak + " / " + CONFIG.STREAK_UPGRADE + " for an upgrade");
       hText(p, "tw_st_l3", "Kills: " + p.kills);
     } else if (p.role === "mortar") {
@@ -575,7 +756,8 @@ Instance.OnActivate(() => {
   Instance.SetNextThink(now());
 });
 Instance.OnRoundStart(() => {
-  points = null; shells.length = 0;
+  points = null; shells.length = 0; bombs.length = 0;
+  for (const p of players.values()) p.air = undefined;
   for (const team of [T, CT]) for (const c of crews[team]) { c.loaded = false; c.target = null; c.impacts = []; c.cooldown = 0; }
   for (const p of players.values()) { p.deployed = false; p.deployAt = now() + CONFIG.LOBBY_RESPAWN; p.inSight = false; p.carrying = false; }
   hudEnt = undefined;
@@ -613,13 +795,19 @@ Instance.OnPlayerKill(({ player, attacker }) => {
   a.kills++; a.streak++; a.merit++;
   if (a.role === "mortar") { a.mortarKills++; toast(a, "Direct hit!", 2); }
   if (a.role === "infantry" && !a.upgraded && a.streak >= CONFIG.STREAK_UPGRADE && ap.IsAlive()) {
-    const opts = CONFIG.UPGRADE[ap.GetTeamNumber()] || ["weapon_awp"];
-    const w = opts[Math.floor(Math.random() * opts.length)];
-    const old = ap.FindWeapon(CONFIG.INF_RIFLE); if (old) { try { ap.DestroyWeapon(old); } catch (e) {} }
-    ap.GiveNamedItem(w, true);
+    const team = ap.GetTeamNumber();
+    const w = CONFIG.UPGRADE[team];
+    const old = ap.FindWeapon(CONFIG.INF_RIFLE[team]); if (old) { try { ap.DestroyWeapon(old); } catch (e) {} }
+    if (w && !ap.FindWeapon(w)) ap.GiveNamedItem(w, true);
     a.upgraded = true;
-    toast(a, (w === "weapon_awp" ? "Sniper's rifle" : "Automatic rifle") + " issued for your streak!", 4);
+    toast(a, CONFIG.UPGRADE_NAME[team] + " issued for your streak!", 4);
   }
+});
+Instance.OnBulletImpact(({ weapon, hitEntity }) => {
+  const ac = planeOfEntity(hitEntity); if (!ac) return;
+  let owner; try { owner = toPawn(weapon.GetOwner()); } catch (e) {}
+  let dmg = 30; try { const d = weapon.GetData(); if (d && d.damage) dmg = d.damage; } catch (e) {}
+  hitPilot(ac, Math.max(CONFIG.AIR.HIT_MIN, dmg * CONFIG.AIR.HIT_SCALE), owner);
 });
 Instance.OnPlayerChat(({ player, text }) => {
   if (!player) return;
