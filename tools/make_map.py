@@ -308,6 +308,11 @@ for s in (-1, 1):
         prop('shelter', s * xs_, y, g - LY.DEPTH, 0 if s > 0 else 180)
         prop('crate_medical', s * (xs_ + 30), y, g - LY.DEPTH, rng.uniform(-3, 3))
         prop('stretcher', s * (xs_ - 3), y - 25, g - LY.DEPTH + 0.5, rng.uniform(-3, 3))
+        # candle on the medical crate and a warm baked light under the arch
+        prop(None, s * (xs_ + 30), y + rng.uniform(-6, 6), g - LY.DEPTH + 18.6, rng.uniform(0, 360),
+             stock='models/props/de_ancient/ancient_lighting/ancient_lighting_candle_cluster_01_lit.vmdl', solid='0')
+        ent('light_omni2', (s * (xs_ + 10), y, g - LY.DEPTH + 34), (90, 0, 0), group=GROUP, brightness_units='1', brightness_lumens='700', brightness='1',
+            color='255 176 96', range='260', directlight='3', castshadows='1', colormode='0', enabled='1', bouncescale='1.0', shape='0')
         prop('sign_dressing_gb' if s > 0 else 'sign_dressing_de', s * (LY.XS + 34), y + 44, g - LY.DEPTH, 90 if s > 0 else 270)
     # trench signs at the communication trench junctions
     for k, y in enumerate(LY.COMM_Y):
@@ -428,6 +433,17 @@ for (cx, cy, r, dep) in sorted(LY.CRATERS.tolist(), key=lambda c: -c[2]):
     nw += 1
 print('no man\'s land: %d puddles' % nw)
 
+# smoke: smouldering wrecks, a couple of burning craters, distant columns behind both lines
+for (x, y) in ((-380, 860), (520, -1720), (760, 1420), (-1040, -2350)):
+    ent('info_particle_system', (x, y, gz(x, y) + 70), group=GROUP, effect_name='particles/burning_fx/barrel_burning_engine_smoke_dark.vpcf', start_active='1')
+for _ in range(3):
+    x, y = rng.uniform(-900, 900), rng.uniform(-2800, 2800)
+    ent('info_particle_system', (x, y, gz(x, y) + 4), group=GROUP, effect_name='particles/burning_fx/env_fire_small_smoke.vpcf', start_active='1')
+for s_ in (-1, 1):
+    for y in (-3900, -900, 2600):
+        x = s_ * rng.uniform(6500, 6950); yy = y + rng.uniform(-400, 400)
+        ent('info_particle_system', (x, yy, gz(x, yy) + 20), group=GROUP, effect_name='particles/ambient_fx/ambient_smokestack.vpcf', start_active='1')
+
 # scattered metal debris across no man's land
 DEB = ['models/de_cache_s2/debris/debris_kit_01a/debris_metal_01%s.vmdl' % c for c in 'abcdefgh']
 for _ in range(70):
@@ -515,6 +531,8 @@ for s in (-1, 1):
                 fademindist='-1', fademaxdist='0', StartDisabled='0', HoldAnimation='0', RandomAnimation='0')
         props_placed['models/tw/ext/%s/%s.vmdl' % (pl, dyn)] = 1
         tg = '%s_%d' % ('ct' if s > 0 else 't', i + 1)
+        ent('info_particle_system', (px - s * 60, py, gz(px - s * 60, py) + 60), group=GROUP, targetname='tw_plane_smoke_' + tg, parentname='tw_plane_' + tg,
+            effect_name='particles/burning_fx/barrel_burning_engine_smoke_dark.vpcf', start_active='0')
         for kind, snd in (('eng', 'tw.plane_engine'), ('gun', 'tw.plane_gun')):
             ent('point_soundevent', (px - s * 60, py, gz(px - s * 60, py) + 60), group=GROUP, targetname='tw_plane_%s_%s' % (kind, tg), soundName=snd,
                 startOnSpawn='0', toLocalPlayer='0', stopOnNew='1' if kind == 'gun' else '0', saveAndRestore='0')

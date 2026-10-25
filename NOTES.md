@@ -64,7 +64,8 @@ Done this session (since the first delivery):
 
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
-- Polish ideas: dugout lanterns/lights in shelters, telephone wire on posts, periscopes, more varied revetments (wattle/hurdle),
+- Done 03:12: shelter candles + baked warm light, wreck/crater smoke, distant smoke columns, damaged-plane smoke (HP <= 45).
+- Polish ideas: telephone wire on posts, periscopes, more varied revetments (wattle/hurdle),
   bomb/shell craters decals, smoke columns from wrecks, distant flashes on the horizon at night-ish skies, plane damage smoke.
 2. Fill the 3D skybox (distant terrain ring, tree lines beyond the map edge) + skybox_reference in the main map.
 3. Script: weapons per team (above), arcade biplane flight.

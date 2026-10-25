@@ -52,7 +52,7 @@ const CONFIG = {
     SPAWN_ALT: 1100, V_STALL: 420, V_MIN: 520, V_CRUISE: 1150, V_MAX: 1650, ACCEL: 0.6, DIVE_GAIN: 520,
     TURN: 62, TURN_SLOW: 0.45, BANK_MAX: 65, ROLL_SIGN: -1, MODEL_YAW: 180,     // models' noses point at -x
     ROLL_RATE: 160, ROLL_MAX: 85, BANK_YAW: 55, BANK_BOOST: 0.9,              // A/D roll; banked into the turn = faster turn
-    GUN_AMMO: 500, GUN_RELOAD: 6,
+    GUN_AMMO: 500, GUN_RELOAD: 6, SMOKE_HP: 45,
     COCKPIT: { back: 26, up: 74 }, VIEW_DEFAULT: "chase",                     // "cockpit" also supported (camera at the pilot's head)
     BOX_X: 6500, BOX_Y: 5500, ALT_MAX: 5000, ALT_MIN: 120,
     GUN_INTERVAL: 0.09, GUN_DAMAGE: 16, GUN_RANGE: 5200, GUN_SPREAD: 0.014, GUN_FROM: 150,
@@ -374,6 +374,7 @@ function endFlight(p, pawn, crashed) {
                         x: a.pos.x, y: a.pos.y, z: a.pos.z, radius: 260, damage: 60 });
   if (live(a.ac.ent)) {
     fire("tw_plane_eng_" + a.ac.ent.GetEntityName().slice("tw_plane_".length), "StopSound");
+    fire("tw_plane_smoke_" + a.ac.ent.GetEntityName().slice("tw_plane_".length), "Stop");
     a.ac.ent.Teleport({ position: a.ac.park, angles: a.ac.parkAng, velocity: v3(0, 0, 0) });
   }
   a.ac.pilot = -1;
@@ -489,6 +490,8 @@ function tickAir(p, pawn, dt, pressed, held) {
     bombs.push({ pos: v3(a.pos.x, a.pos.y, a.pos.z - 20), vel: v3(a.f.x * a.speed, a.f.y * a.speed, a.f.z * a.speed), team: pawn.GetTeamNumber(), slot: p.slot });
     toast(p, "Bomb away!", 1.5);
   }
+  const smoking = pawn.GetHealth() <= CONFIG.AIR.SMOKE_HP;
+  if (smoking !== !!a.smoking) { a.smoking = smoking; fire("tw_plane_smoke_" + a.ac.ent.GetEntityName().slice("tw_plane_".length), smoking ? "Start" : "Stop"); }
   drawFlight(p, a, gz);
   return prompt;
 }
