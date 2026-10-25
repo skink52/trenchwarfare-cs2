@@ -76,6 +76,7 @@ def in_battle(x, y):
 from scipy import ndimage as _ndi
 POOLS = []                      # (side, mask (bool, CT raster 8u), level, x0, y0) per pool
 WET = {}                        # side -> wetness raster (CT coords, 8u)
+WET_IN, WET_FL = {}, {}
 def _plan_pools():
     R_ = LY.raster()
     rs = 16.0
@@ -105,11 +106,14 @@ def _plan_pools():
                 if span < 900: break
                 lvl -= 0.4
             if lab[i, j] == 0 or reg.sum() < 12: continue
+            # ankle deep at most, and never on top of another pool (two sheets would z-fight)
+            if lvl - fl[reg].min() > 5.0: continue
+            if any(p_[0] == s_ and (p_[1] & _ndi.binary_dilation(reg, iterations=3)).any() for p_ in POOLS): continue
             POOLS.append((s_, reg, lvl))
             near = _ndi.binary_dilation(reg, iterations=2)
             wet = np.maximum(wet, near * np.clip((lvl + 3.0 - fl) / 3.0, 0, 1))
             made += 1
-        WET[s_] = (wet, xs[0], ys[0], rs)
+        WET[s_] = (wet, xs[0], ys[0], rs); WET_IN[s_] = inside; WET_FL[s_] = fl
 _plan_pools()
 
 
@@ -481,10 +485,17 @@ for s in (-1, 1):
             prop('tl_lantern', f['c'][0] + rng.uniform(-3, 3), f['c'][1] + rng.uniform(-3, 3), f['z'][1], rng.uniform(0, 360), check=True, reg=True)
     print('trench dressing: %d pieces (side %d)' % (nb, s))
 # standing water: flat sheets at each pool's level over its region (grown a little; the floor hides the shoreline)
-nwp = 0
+nwp = 0; nfloat = 0
 for (s_, reg, lvl) in POOLS:
     wet, x0, y0, rs = WET[s_]
-    grow = _ndi.binary_dilation(reg, iterations=1)
+    # one cell past the shoreline so the sheet ends inside the rising floor - except next to a separate (dry) basin lower than the water,
+    # where the sheet stops at the shore cell instead of hanging over the dip
+    inside_ = WET_IN[s_]; flg = WET_FL[s_]
+    ring1 = _ndi.binary_dilation(reg, iterations=1) & ~reg & inside_
+    other = inside_ & (flg < lvl) & ~reg
+    grow = reg | (ring1 & ~_ndi.binary_dilation(other, iterations=1))
+    ring = _ndi.binary_dilation(grow, iterations=1) & ~grow & inside_
+    nfloat += int((ring & (flg < lvl - 0.05)).sum())
     ii, jj = np.nonzero(grow)
     i0, i1, j0, j1 = ii.min(), ii.max() + 1, jj.min(), jj.max() + 1
     xs_ = x0 - rs / 2 + np.arange(i0, i1 + 1) * rs; ys_ = y0 - rs / 2 + np.arange(j0, j1 + 1) * rs
@@ -497,7 +508,7 @@ for (s_, reg, lvl) in POOLS:
     if faces:
         vmesh.mesh_node(vmesh.polymesh_open(verts, faces, mats), GROUP, bake=False, shadows=False)
         nwp += 1
-print('trench water: %d pools' % nwp)
+print('trench water: %d pools, %d rim cells below the water' % (nwp, nfloat))
 print('skipped (no room):', {k.split('/')[-1]: v for k, v in sorted(skipped.items(), key=lambda kv: -kv[1])[:12]})
 print('trenches: %d walls per side' % len(WALLS))
 

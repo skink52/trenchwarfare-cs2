@@ -2,6 +2,14 @@
 
 Read this first when resuming. Newest state at the top.
 
+## State 2026-10-26 ~08:00 ACDT (update 4: tw4_map_main.zip + update4_mg_trenchwarfare.bat, apply after update 3)
+
+- Trench water: pools now never overlap (two sheets z-fought where the old planner picked the same basin twice), are capped at 5 u deep,
+  and each sheet extends one cell past its shoreline except next to a separate lower basin, so no sheet edge hangs above the floor
+  (make_map prints "rim cells below the water": 0). 21 pools.
+- Next: in-game check of update 3/4 (plane angles, pawn hiding, decals, stock materials); optional walk-up/taxi take-off; more dressing
+  in the mortar pits and airfield.
+
 ## State 2026-10-26 ~05:30 ACDT (update 3 delivered: tw3_content_01..05.zip, tw3_map_main.zip, update3_mg_trenchwarfare.bat)
 
 - HD textures: every procedural prop now uses CS2 game textures where one fits (`tools/stock.py`). New custom csgo_complex vmats exported
