@@ -214,6 +214,9 @@ def prop(name, x, y, z, yaw=0.0, pitch=0.0, roll=0.0, scale=(1, 1, 1), stock=Non
     return e
 
 
+EXT = lambda n: 'models/tw/ext/%s/%s.vmdl' % (n, n)
+
+
 def yaw_for(nx, ny):
     """yaw so the prop's local +y points along -n (into the earth) given the wall's inward normal n"""
     return math.degrees(math.atan2(nx, -ny))
@@ -320,6 +323,34 @@ for s in (-1, 1):
         if r < 0.25: prop('crate_long', s * (LY.XF + 18), y, g - LY.DEPTH + 4, rng.uniform(80, 100))
         elif r < 0.45: prop('helmet_brodie' if s > 0 else 'helmet_stahl', s * (LY.XF + 20), y, g - LY.DEPTH + 4.5, rng.uniform(0, 360))
         elif r < 0.6: prop('ladder', s * (LY.XF - LY.HW - 26), y + 60, g - LY.DEPTH + 40, 90 if s > 0 else 270, pitch=-14)
+    # more trench life against the rear walls: buckets, water barrels, crates, telephones, cans, shells
+    CLUT = [('stock', 'models/cs_italy/props/bucket/wood_bucket_1.vmdl', 0), ('stock', 'models/cs_italy/props/barrel/italy_barrel_wood_1.vmdl', 0),
+            ('stock', 'models/de_inferno/wood_crate_01/inferno_crate_wood_01.vmdl', 0), ('tw', 'crate_shells', 0), ('tw', 'casings', 0),
+            ('stock', 'models/generic/ammo_artillery_01/ammo_artillery_small_01b.vmdl', 0), ('ext', 'field_telephone', 0), ('ext', 'petrol_can', 0),
+            ('tw', 'helmet_brodie' if s > 0 else 'helmet_stahl', 4.5), ('ext', 'helmet_brodie_ext' if s > 0 else 'helmet_stahl_ext', 0.5)]
+    for i in range(LY.NBAY):
+        for j in range(rng.randint(2, 4)):
+            y = LY.Y0 + i * LY.P + rng.uniform(-20, 270)
+            g = float(LY.ground_low(np.array([LY.XF]), np.array([y]))[0])
+            kind, nm, dz = CLUT[rng.randint(len(CLUT))]
+            x = LY.XF + LY.HW - rng.uniform(10, 14)
+            stock_ = nm if kind == 'stock' else (EXT(nm) if kind == 'ext' else None)
+            prop(None if stock_ else nm, s * x, y, g - LY.DEPTH + 3.5 + dz, rng.uniform(0, 360), stock=stock_, solid='6' if kind == 'stock' else '0')
+    # support trench: a few stores along its rear wall
+    for y in np.arange(LY.Y0 + 200, LY.Y0 + LY.NBAY * LY.P - 200, 520.0):
+        if any(abs(y - sy) < 200 for sy in LY.SHELTER_Y) or any(abs(y - cy - 112) < 220 for cy in LY.COMM_Y): continue
+        xs0 = LY.support_x_at(y)
+        g = float(LY.ground_low(np.array([xs0]), np.array([y]))[0])
+        kind, nm, dz = CLUT[rng.randint(len(CLUT))]
+        stock_ = nm if kind == 'stock' else (EXT(nm) if kind == 'ext' else None)
+        prop(None if stock_ else nm, s * (xs0 + LY.HW - 12), y + rng.uniform(-40, 40), g - LY.DEPTH + 3.5 + dz, rng.uniform(0, 360), stock=stock_, solid='0')
+    # flooded stretches: brown water between the duckboard slats
+    for (x0, y0, x1, y1, kind) in LY.rects():
+        if kind in ('step', 'niche') or rng.rand() > 0.35: continue
+        cx_, cy_ = (x0 + x1) / 2, (y0 + y1) / 2
+        fl = float(LY.ground_low(np.array([cx_]), np.array([cy_]))[0]) - LY.DEPTH
+        bx0, bx1 = sorted((s * (x0 + 2), s * (x1 - 2)))
+        vmesh.mesh_node(vmesh.box_mesh(bx0, y0 + 2, fl - 14, bx1, y1 - 2, fl + 2.2, dict(side=NODRAW, top=WATER)), GROUP, bake=True)
 print('trenches: %d walls per side' % len(WALLS))
 
 # ---------------------------------------------------------------- no man's land
@@ -346,7 +377,6 @@ wrecks = [('wreck_tank', -380, 860, 34, 7, -5, -14), ('wreck_tank', 520, -1720, 
 for (nm, x, y, yaw, pitch, roll, sink) in wrecks:
     prop(nm, x, y, gz(x, y) + sink, yaw, pitch, roll)
 # downloaded models (CC-BY, see CREDITS.txt): knocked-out tanks, guns, battlefield clutter
-EXT = lambda n: 'models/tw/ext/%s/%s.vmdl' % (n, n)
 for (nm, x, y, yaw, pitch, roll, sink) in (('tank_a7v', 760, 1420, 70, 5, -7, -16), ('tank_renault_ft', -1040, -2350, 230, -6, 9, -10),
                                            ('gun_75mm', -2660, 900, 20, 0, 3, -3), ('howitzer_bl8', 2700, -2300, 160, 0, 0, -2)):
     prop(None, x, y, gz(x, y) + sink, yaw, pitch, roll, stock=EXT(nm))
@@ -397,6 +427,13 @@ for (cx, cy, r, dep) in sorted(LY.CRATERS.tolist(), key=lambda c: -c[2]):
     vmesh.mesh_node(vmesh.polymesh_open(verts, faces, fm), GROUP, bake=True)
     nw += 1
 print('no man\'s land: %d puddles' % nw)
+
+# scattered metal debris across no man's land
+DEB = ['models/de_cache_s2/debris/debris_kit_01a/debris_metal_01%s.vmdl' % c for c in 'abcdefgh']
+for _ in range(70):
+    x = rng.uniform(-1300, 1300); y = rng.uniform(-3300, 3300)
+    if not free(x, y, 70): continue
+    prop(None, x, y, gz(x, y) - 1, rng.uniform(0, 360), rng.uniform(-10, 10), rng.uniform(-10, 10), stock=DEB[rng.randint(len(DEB))], solid='0')
 
 # ---------------------------------------------------------------- mortar pits
 for s in (-1, 1):
@@ -453,6 +490,16 @@ for s in (-1, 1):
     for j in range(5):
         x, y = s * (LY.HANGAR_X + rng.uniform(-340, 340)), rng.uniform(-280, 280)
         prop(None, x, y, gz(x, y), rng.uniform(0, 360), stock='models/tw/ext/petrol_can/petrol_can.vmdl')
+    # airfield stores: fuel drums, pallets, crates, a barrow
+    for j in range(7):
+        x, y = s * (LY.HANGAR_X + rng.uniform(-300, 300)), rng.choice([-1, 1]) * rng.uniform(420, 520)
+        prop(None, x, y, gz(x, y), rng.uniform(0, 360), stock='models/generic/barrel_kit_01/barrel_0%d_a.vmdl' % (1 + rng.randint(3)), solid='6')
+    for j in range(3):
+        x, y = s * (LY.HANGAR_X + rng.uniform(-250, 250)), rng.choice([-1, 1]) * rng.uniform(440, 520)
+        prop(None, x, y, gz(x, y), rng.uniform(0, 360), stock='models/de_inferno/wood_pallet_01/inferno_pallet_wood_01.vmdl', solid='6')
+        prop(None, x + rng.uniform(-8, 8), y + rng.uniform(-8, 8), gz(x, y) + 6, rng.uniform(0, 360), stock='models/generic/crate_wooden_01/crate_wooden_01_%s.vmdl' % 'abc'[j], solid='6')
+    x, y = s * (LY.HANGAR_X - 430), 300
+    prop(None, x, y, gz(x, y), rng.uniform(0, 360), stock='models/de_overpass/junk/wheelbarrow01a/wheelbarrow01a.vmdl', solid='6')
     for k, y in enumerate(LY.SHELTER_Y):
         xs_ = LY.XS + LY.HW + 4 + 48
         prop(None, s * (xs_ - 3), y + 25, float(LY.ground_low(np.array([xs_]), np.array([y]))[0]) - LY.DEPTH + 0.5, rng.uniform(-3, 3), stock=EXT('stretcher_ext'))

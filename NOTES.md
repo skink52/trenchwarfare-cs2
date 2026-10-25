@@ -58,7 +58,14 @@ Done this session (since the first delivery):
 - Ambience: cosmetic NML shell bursts every 4-13 s >= 550 u from players (script), soundscape children rifles/MG/distant shells/bullet whiz.
 - Planes: `tw_plane_<tag>_1..5` prop_dynamic (`plane_spad7_dyn` / `plane_dr1_dyn`, archetype ""), parked on the strip (spacing 360).
 
+- Delivered 03:10 26 Oct: tw2_content_01..10.zip (<20 MB each; 25+ MB uploads fail), tw2_map_main/skybox.zip, tw2_game.zip + new bat.
+  Packaging: stale prop textures removed (only files referenced by vmdl remaps / vmats kept). Detail pass 1: trench clutter, flooded
+  trench stretches, NML metal debris, airfield stores.
+
 ## Next
+- Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
+- Polish ideas: dugout lanterns/lights in shelters, telephone wire on posts, periscopes, more varied revetments (wattle/hurdle),
+  bomb/shell craters decals, smoke columns from wrecks, distant flashes on the horizon at night-ish skies, plane damage smoke.
 2. Fill the 3D skybox (distant terrain ring, tree lines beyond the map edge) + skybox_reference in the main map.
 3. Script: weapons per team (above), arcade biplane flight.
 4. More detail pass; verify (check_mesh, previews, mock, tsc); zip + bat to `C:\source1\cs2port\assets\tw\`; update project doc.
