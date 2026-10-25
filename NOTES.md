@@ -49,6 +49,10 @@ Done this session (since the first delivery):
   model_archetype "" ; nose is model -x), mock stubs (Move, GetCustomCamera, OnBulletImpact, ground-aware TraceLine), then tests.
 
 ## Next
+0. Flight additions requested 00:57: A/D roll (banking tightens the turn rate: roll input sets bank, turn rate scales with bank),
+   vintage flight HUD (altimeter, heading/compass, airspeed, throttle, gun ammo + bombs) - preferably a cockpit view: camera inside the
+   cockpit (CustomCamera CONTROLLED_POSITION at the cockpit, angles player-controlled) with a panorama overlay of brass gauges/wood panel
+   showing that info; keep the chase cam as an option.
 2. Fill the 3D skybox (distant terrain ring, tree lines beyond the map edge) + skybox_reference in the main map.
 3. Script: weapons per team (above), arcade biplane flight.
 4. More detail pass; verify (check_mesh, previews, mock, tsc); zip + bat to `C:\source1\cs2port\assets\tw\`; update project doc.
