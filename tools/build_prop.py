@@ -1,0 +1,113 @@
+"""Bakes and writes one prop: LOD meshes (same chart layout), atlas textures, vmat, vmdl, physics hulls, preview."""
+import os, sys, time
+import numpy as np
+from PIL import Image
+import bake, modelio, render
+
+OUT = os.environ.get('TW_OUT', os.path.join(os.path.dirname(__file__), '..', 'out', 'addon'))
+PREV = os.path.join(os.path.dirname(__file__), '..', 'preview')
+ROOT = 'tw'
+
+
+def build(name, spec, preview=True, cam=None):
+    t0 = time.time()
+    lods = spec['lods']
+    m0 = lods[0]
+    groups = spec.get('atlases') or {'main': dict(size=spec.get('size', 1024))}
+    # split charts by atlas key
+    chart_atlas = [c.get('atlas', 'main') for c in m0.charts]
+    rel_dir = 'models/%s/%s' % (ROOT, name)
+    mat_rel = 'materials/models/%s/%s' % (ROOT, name)
+    os.makedirs(os.path.join(OUT, rel_dir), exist_ok=True)
+    uvs = [np.zeros((len(m.V), 2)) for m in lods]
+    vmats = {}
+    previews = []
+    for key, g in groups.items():
+        ids = [i for i, a in enumerate(chart_atlas) if a == key]
+        if not ids: continue
+        sub = submesh(m0, ids)
+        baked = bake.bake(sub, spec['shaders'], size=g['size'], res=spec.get('res'), ground=spec.get('ground'),
+                          fill=g.get('fill', 0.8), normal_strength=spec.get('normal_strength', 1.0))
+        # recompute the atlas uv for every LOD with the same packing
+        d, rects = bake.pack([m0.charts[i] for i in ids], g['size'], g.get('fill', 0.8))
+        for li, m in enumerate(lods):
+            idmap = {c: k for k, c in enumerate(ids)}
+            vchart = np.full(len(m.V), -1); vchart[m.F.ravel()] = np.repeat(m.FC, 3)
+            for c, k in idmap.items():
+                sel = vchart == c
+                if not sel.any(): continue
+                R = rects[k]
+                uvs[li][sel, 0] = (R[0] + m.T[sel, 0] * R[2]) / g['size']
+                uvs[li][sel, 1] = (R[1] + m.T[sel, 1] * R[3]) / g['size']
+        tname = name if key == 'main' else '%s_%s' % (name, key)
+        tex = modelio.write_textures(OUT, mat_rel, tname, baked, metal=spec.get('metal', False) or g.get('metal', False))
+        if g.get('alpha') is not None:
+            a = g['alpha'](baked)
+            Image.fromarray(modelio.to8(a)).save(os.path.join(OUT, mat_rel, tname + '_trans.png'))
+            alpha = '%s/%s_trans.png' % (mat_rel, tname)
+        else:
+            alpha = None
+        vm = '%s/%s.vmat' % (mat_rel, tname)
+        modelio.write_vmat(OUT, vm, tex, comment='mg_trenchwarfare %s (procedural, AI-generated)' % tname, alpha=alpha,
+                           backfaces=g.get('backfaces', False))
+        vmats[key] = vm
+        previews.append((sub, bake.atlas_uv(sub, rects, g['size']), baked))
+    # SMDs: one material name per atlas
+    meshes = []
+    for li, m in enumerate(lods):
+        parts = []
+        for key in vmats:
+            ids = [i for i, a in enumerate(chart_atlas) if a == key]
+            fsel = np.isin(m.FC, ids)
+            parts.append((key, fsel))
+        mn = '%s_lod%d' % (name, li)
+        write_multi_smd(os.path.join(OUT, rel_dir, mn + '.smd'), m, uvs[li], [(('%s_%s' % (name, k)), s) for k, s in parts])
+        meshes.append(mn)
+    hull_names = []
+    for k, pts in enumerate(spec.get('hulls', [])):
+        hn = '%s_hull%d' % (name, k)
+        modelio.write_hull_smd(os.path.join(OUT, rel_dir, hn + '.smd'), [pts])
+        hull_names.append(hn)
+    remaps = [('%s_%s.vmat' % (name, k), v) for k, v in vmats.items()]
+    txt = modelio.vmdl_text(name, rel_dir, meshes, remaps, hull_names, surface=spec.get('surface', 'default'),
+                            lod_thresholds=spec.get('lod_thresholds'), entity='')
+    open(os.path.join(OUT, rel_dir, name + '.vmdl'), 'w', newline='\n').write(txt)
+    lo, hi = m0.bounds()
+    info = dict(model='%s/%s.vmdl' % (rel_dir, name), tris=[int(m.tri_count()) for m in lods], mins=lo.round(1).tolist(), maxs=hi.round(1).tolist())
+    print('%s: %s tris %s  bounds %s..%s  %.1fs' % (name, info['model'], info['tris'], info['mins'], info['maxs'], time.time() - t0))
+    if preview:
+        os.makedirs(PREV, exist_ok=True)
+        c = (lo + hi) / 2
+        rad = float(np.linalg.norm(hi - lo)) * 1.3
+        if cam: c, rad = cam.get('c', c), cam.get('r', rad)
+        render.turntable(previews, c, rad, os.path.join(PREV, name + '.png'), n=4, elev=cam.get('elev', 22) if cam else 22)
+    return info
+
+
+def submesh(m, chart_ids):
+    import geo
+    sel = np.isin(m.FC, chart_ids)
+    s = geo.Mesh()
+    used = np.unique(m.F[sel].ravel())
+    remap = -np.ones(len(m.V), np.int64); remap[used] = np.arange(len(used))
+    s.V, s.N, s.T = m.V[used], m.N[used], m.T[used]
+    s.F = remap[m.F[sel]]
+    cmap = {c: k for k, c in enumerate(chart_ids)}
+    s.FC = np.array([cmap[c] for c in m.FC[sel]], np.int64)
+    s.charts = [m.charts[c] for c in chart_ids]
+    s.parts = m.parts; s.FP = m.FP[sel]
+    return s
+
+
+def write_multi_smd(path, mesh, uv, groups):
+    V, N = mesh.V, mesh.N
+    lines = ["version 1", "nodes", '0 "root" -1', "end", "skeleton", "time 0", "0 0 0 0 0 0 0", "end", "triangles"]
+    fmt = "0 %.4f %.4f %.4f %.4f %.4f %.4f %.5f %.5f"
+    for matname, fsel in groups:
+        for f in mesh.F[fsel]:
+            lines.append(matname)
+            for i in f:
+                x, y, z = V[i]; nx, ny, nz = N[i]
+                lines.append(fmt % (y, -x, z, ny, -nx, nz, uv[i, 0], 1 - uv[i, 1]))
+    lines.append("end")
+    open(path, 'w', newline='\n').write("\n".join(lines) + "\n")
