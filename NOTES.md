@@ -48,11 +48,17 @@ Done this session (since the first delivery):
   Still to do for flight: map entities `tw_plane_<tag>_1..5` (prop_dynamic, `_dyn.vmdl` copies of the ext plane models with
   model_archetype "" ; nose is model -x), mock stubs (Move, GetCustomCamera, OnBulletImpact, ground-aware TraceLine), then tests.
 
+- Flight done + mock-tested (no crashes in 240 s with 24 players): yaw/pitch steered separately (slerp flipped through the vertical),
+  A/D roll (bank boosts the mouse turn, held bank turns on its own), soft box + hard clamp at box+600, ground avoidance,
+  500-round belt, 2 bombs (rearm 18 s), engine loop (`sounds/tw/plane_engine.wav`, smpl+cue loop markers) and gun sounds on
+  point_soundevents `tw_plane_eng|gun_<tag>_N` (SetSourceEntity -> plane). Chase view only (user: cockpit overlay looked silly);
+  instruments are dark-faced brass dials bottom-centre (`tools/tw_cockpit.py`): bank, airspeed, compass, altimeter, rpm, ammo counter, bomb lamps.
+- Upgraded infantry: SHIFT+E or `!swap` toggles streak weapon <-> scoped rifle (ammo kept). Iron-sight zoom for the Lewis/Mondragon is a
+  vdata job for the weapons session: keep 1 zoom level (FOV ~55), `m_bHideViewModelWhenZoomed false` (no scope overlay).
+- Ambience: cosmetic NML shell bursts every 4-13 s >= 550 u from players (script), soundscape children rifles/MG/distant shells/bullet whiz.
+- Planes: `tw_plane_<tag>_1..5` prop_dynamic (`plane_spad7_dyn` / `plane_dr1_dyn`, archetype ""), parked on the strip (spacing 360).
+
 ## Next
-0. Flight additions requested 00:57: A/D roll (banking tightens the turn rate: roll input sets bank, turn rate scales with bank),
-   vintage flight HUD (altimeter, heading/compass, airspeed, throttle, gun ammo + bombs) - preferably a cockpit view: camera inside the
-   cockpit (CustomCamera CONTROLLED_POSITION at the cockpit, angles player-controlled) with a panorama overlay of brass gauges/wood panel
-   showing that info; keep the chase cam as an option.
 2. Fill the 3D skybox (distant terrain ring, tree lines beyond the map edge) + skybox_reference in the main map.
 3. Script: weapons per team (above), arcade biplane flight.
 4. More detail pass; verify (check_mesh, previews, mock, tsc); zip + bat to `C:\source1\cs2port\assets\tw\`; update project doc.

@@ -18,7 +18,10 @@ class Ent {
   IsValid() { return this.valid; } GetAbsOrigin() { return { ...this.pos }; } GetAbsAngles() { return { ...this.ang }; }
   GetClassName() { return this.cls; } GetEntityName() { return this.name; }
   Teleport(o) { if (o.position) this.pos = { ...o.position }; if (o.angles) this.ang = { ...o.angles }; stats.teleports++; }
+  Move(o) { if (o.position) { for (const k of ['x', 'y', 'z']) if (!Number.isFinite(o.position[k])) throw new Error('bad Move ' + JSON.stringify(o)); this.pos = { ...o.position }; } if (o.angles) this.ang = { ...o.angles }; stats.moves = (stats.moves || 0) + 1; }
+  SetParent(p) { this.parent = p; } GetParent() { return this.parent; }
 }
+class Cam extends Ent { constructor(p) { super('', 'camera', { x: 0, y: 0, z: 0 }); this.p = p; this.mode = 0; } SetMode(m) { this.mode = m; stats.cam = (stats.cam || 0) + 1; } GetMode() { return this.mode; } SetFollowConfig(c) { if (!c.followEntity) throw new Error('follow without entity'); } }
 const world = new Map();
 for (const e of ents) if (e.name) world.set(e.name, new Ent(e.name, e.cls, { x: e.origin[0], y: e.origin[1], z: e.origin[2] }, { pitch: e.angles[0], yaw: e.angles[1], roll: e.angles[2] }));
 class Hud extends Ent {
@@ -36,7 +39,8 @@ class Pawn extends Ent {
   GetPlayerController() { return this.ctl; } GetTeamNumber() { return this.ctl.team; } IsAlive() { return this.hp > 0; }
   GetHealth() { return this.hp; } SetHealth(v) { if (!Number.isInteger(v)) throw new Error('SetHealth non-integer ' + v); this.hp = v; }
   GetArmor() { return this.armor; } SetArmor(v) { if (!Number.isInteger(v)) throw new Error('SetArmor non-integer ' + v); this.armor = v; } HasHelmet() { return this.helmet; } SetHasHelmet(v) { this.helmet = v; }
-  IsInputPressed(b) { return (this.keys & b) !== 0; } SetEyeAngles() {} SetMoveType(m) { this.mt = m; }
+  IsInputPressed(b) { return (this.keys & b) !== 0; } SetEyeAngles(a) { this.eye = { ...a }; } GetEyeAngles() { return this.eye || { pitch: 0, yaw: 0, roll: 0 }; } SetMoveType(m) { this.mt = m; }
+  GetCustomCamera() { return this.cam || (this.cam = new Cam(this)); }
   DestroyWeapons() { this.weapons = []; } DestroyWeapon(w) { this.weapons = this.weapons.filter(x => x !== w); }
   GiveNamedItem(n) { if (this.weapons.find(w => w.n === n)) throw new Error('duplicate weapon ' + n); this.weapons.push(new Weapon(n)); }
   FindWeapon(n) { return this.weapons.find(w => w.n === n); }
@@ -63,15 +67,29 @@ function setTimeout0(dt, fn) { later.push({ at: time + dt, fn }); }
 const Instance = {
   Msg: (m) => stats.msgs.push(String(m)), GetGameTime: () => time, SetThink: (f) => { Instance._think = f; }, SetNextThink: (t) => { Instance._next = t; },
   OnActivate: (f) => hooks.activate = f, OnRoundStart: (f) => hooks.round = f, OnPlayerReset: (f) => hooks.reset = f, OnPlayerDisconnect: (f) => hooks.disc = f,
-  OnPlayerKill: (f) => hooks.kill = f, OnPlayerChat: (f) => hooks.chat = f,
+  OnPlayerKill: (f) => hooks.kill = f, OnPlayerChat: (f) => hooks.chat = f, OnBulletImpact: (f) => hooks.bullet = f,
   FindEntityByName: (n) => world.get(n), GetPlayerController: (s) => ctls[s],
   EntFireAtName: (o) => { stats.fires[o.input] = (stats.fires[o.input] || 0) + 1; if (!world.has(o.name) && !o.name.startsWith('mortar_')) throw new Error('EntFire at missing entity ' + o.name); },
-  ServerCommand: () => {}, TraceLine: (o) => ({ didHit: true, fraction: o.start.z > 1000 ? 0.5 : 1.0, end: { x: o.end.x, y: o.end.y, z: 0 } }),
+  ServerCommand: () => {},
+  TraceLine: (o) => {
+    for (const v of [o.start, o.end]) for (const k of ['x', 'y', 'z']) if (!Number.isFinite(v[k])) throw new Error('bad trace ' + JSON.stringify(o));
+    if (o.end.z >= 0) {
+      // aircraft guns: hit an enemy plane if the ray passes close
+      if (o.traceHitboxes) for (const e of world.values()) if (e.name.startsWith('tw_plane_') && e.name !== (o.ignoreEntity && o.ignoreEntity[0] && o.ignoreEntity[0].name)) {
+        const d = { x: o.end.x - o.start.x, y: o.end.y - o.start.y, z: o.end.z - o.start.z }; const L = Math.hypot(d.x, d.y, d.z);
+        const w = { x: e.pos.x - o.start.x, y: e.pos.y - o.start.y, z: e.pos.z - o.start.z }; const tt = (w.x * d.x + w.y * d.y + w.z * d.z) / L;
+        if (tt > 0 && tt < L && Math.hypot(w.x - d.x * tt / L, w.y - d.y * tt / L, w.z - d.z * tt / L) < 150) { stats.planeHits = (stats.planeHits || 0) + 1; return { didHit: true, fraction: tt / L, end: e.pos, hitEntity: e, startedInSolid: false }; }
+      }
+      return { didHit: false, fraction: 1, end: { ...o.end }, startedInSolid: false };
+    }
+    const f = o.start.z / Math.max(1e-6, o.start.z - o.end.z);
+    return { didHit: true, fraction: f, end: { x: o.start.x + (o.end.x - o.start.x) * f, y: o.start.y + (o.end.y - o.start.y) * f, z: 0 }, startedInSolid: false };
+  },
 };
 // ESM loader shim
 const src = fs.readFileSync(path.join(root, 'src/mg_trenchwarfare.js'), 'utf8')
   .replace(/import \{([^}]*)\} from "cs_script\/point_script";/, 'const {$1} = globalThis.__cs;');
-globalThis.__cs = { Instance, CSInputs: IN, CSMoveType: { NONE: 0, WALK: 2 }, CSDamageTypes: { BLAST: 64 } };
+globalThis.__cs = { Instance, CSInputs: IN, CSMoveType: { NONE: 0, WALK: 2 }, CSDamageTypes: { BLAST: 64 }, CustomCameraMode: { DISABLED: 0, CONTROLLED: 1, CONTROLLED_POSITION: 2, FOLLOW_POSITION: 3 } };
 const tmp = path.join(root, 'test/_run.mjs'); fs.writeFileSync(tmp, src);
 await import(tmp);
 for (let s = 0; s < N; s++) ctls.push(new Ctl(s, s % 2 ? 3 : 2, s % 3 === 2));
@@ -86,6 +104,14 @@ for (let step = 0; step < SECONDS * 64; step++) {
   for (const c of ctls) {
     const p = c.pawn; p.keys = 0;
     if (c.bot || p.hp <= 0) continue;
+    const pr = globalThis.__twDebug && globalThis.__twDebug.players.get(c.slot);
+    if (pr && pr.air) {
+      stats.flyTicks = (stats.flyTicks || 0) + 1;
+      p.eye = { pitch: 10 * Math.sin(time * 0.7 + c.slot), yaw: (c.team === 3 ? 180 : 0) + 70 * Math.sin(time * 0.3 + c.slot), roll: 0 };
+      p.keys = IN.ATTACK | (Math.floor(time) % 4 === 0 ? IN.RIGHT : Math.floor(time) % 4 === 2 ? IN.LEFT : 0) | (Math.floor(time * 4) % 37 === 0 ? IN.ATTACK2 : 0) | (time % 10 < 5 ? IN.FORWARD : 0);
+      continue;
+    }
+    if (pr && pr.upgraded && step % 300 === 0) p.keys = IN.WALK | IN.USE;
     const t = c.team === 2 ? 't' : 'ct';
     const near = (n) => world.get(n);
     for (let k = 1; k <= 5; k++) {
@@ -107,6 +133,12 @@ for (let step = 0; step < SECONDS * 64; step++) {
     }
   }
   if (step % 640 === 0) hooks.chat({ player: ctls[1], text: '!mortar', team: 3 });
+  if (step % 900 === 0) hooks.chat({ player: ctls[4], text: '!air', team: 3 });
+  if (step % 50 === 0 && hooks.bullet) {   // rifle bullets striking a random plane
+    const planes = [...world.values()].filter(e => e.name.startsWith('tw_plane_') && /_(t|ct)_\d+$/.test(e.name) && !e.name.includes('_eng_') && !e.name.includes('_gun_'));
+    const a = ctls[Math.floor(Math.random() * N)];
+    if (planes.length && a.pawn.hp > 0) hooks.bullet({ weapon: { GetOwner: () => a.pawn, GetData: () => ({ GetDamage: () => 88 }) }, position: { x: 0, y: 0, z: 0 }, hitEntity: planes[Math.floor(Math.random() * planes.length)] });
+  }
   // random rifle kills between infantry
   if (step % 97 === 0) {
     const a = ctls[Math.floor(Math.random() * N)], v = ctls[Math.floor(Math.random() * N)];
@@ -118,4 +150,4 @@ fs.unlinkSync(tmp);
 const D = globalThis.__twDebug; const rc = {}; for (const p of D.players.values()) rc[p.team + ':' + p.role] = (rc[p.team + ':' + p.role] || 0) + 1;
 console.log('roles', JSON.stringify(rc), 'crews', JSON.stringify(D.crews[3].map(c => [c.a, c.b, c.loaded, !!c.target, c.impacts.length])));
 const roles = {}; // count from HUD would need introspection; report activity instead
-console.log(JSON.stringify({ hud: stats.hud, vars: stats.vars, fires: stats.fires, dmg: stats.dmg, kills: stats.kills, teleports: stats.teleports, mortarFireAttempts: fired, msgs: stats.msgs.slice(0, 3) }));
+console.log(JSON.stringify({ hud: stats.hud, vars: stats.vars, fires: stats.fires, dmg: stats.dmg, kills: stats.kills, teleports: stats.teleports, moves: stats.moves, cam: stats.cam, flyTicks: stats.flyTicks, planeHits: stats.planeHits, mortarFireAttempts: fired, msgs: stats.msgs.slice(0, 3) }));

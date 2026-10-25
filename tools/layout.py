@@ -281,4 +281,4 @@ def mortar_stations(s, k):
 
 
 def plane_spawns(s):
-    return [(s * (HANGAR_X - 380 - 260), y) for y in (-480, -240, 0, 240, 480)]
+    return [(s * (HANGAR_X - 640 + (60 if k % 2 else 0)), y) for k, y in enumerate((-720, -360, 0, 360, 720))]

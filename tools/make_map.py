@@ -456,6 +456,21 @@ for s in (-1, 1):
     for k, y in enumerate(LY.SHELTER_Y):
         xs_ = LY.XS + LY.HW + 4 + 48
         prop(None, s * (xs_ - 3), y + 25, float(LY.ground_low(np.array([xs_]), np.array([y]))[0]) - LY.DEPTH + 0.5, rng.uniform(-3, 3), stock=EXT('stretcher_ext'))
+    # flyable aircraft (prop_dynamic, script-flown): parked on the strip, noses (model -x) toward the front
+    dyn = '%s_dyn' % pl
+    src = os.path.join(OUT, 'models/tw/ext/%s/%s.vmdl' % (pl, pl))
+    if os.path.exists(src):
+        open(os.path.join(OUT, 'models/tw/ext/%s/%s.vmdl' % (pl, dyn)), 'w', newline='\n').write(
+            open(src).read().replace('model_archetype = "static_prop_model"', 'model_archetype = ""'))
+    for i, (px, py) in enumerate(LY.plane_spawns(s)):
+        e = ent('prop_dynamic', (px - s * 60, py, gz(px - s * 60, py)), (0, 0 if s > 0 else 180, 0), group=GROUP, targetname='tw_plane_%s_%d' % ('ct' if s > 0 else 't', i + 1),
+                model='models/tw/ext/%s/%s.vmdl' % (pl, dyn), solid='6', rendercolor='255 255 255', skin='default', DefaultAnim='', disableshadows='0',
+                fademindist='-1', fademaxdist='0', StartDisabled='0', HoldAnimation='0', RandomAnimation='0')
+        props_placed['models/tw/ext/%s/%s.vmdl' % (pl, dyn)] = 1
+        tg = '%s_%d' % ('ct' if s > 0 else 't', i + 1)
+        for kind, snd in (('eng', 'tw.plane_engine'), ('gun', 'tw.plane_gun')):
+            ent('point_soundevent', (px - s * 60, py, gz(px - s * 60, py) + 60), group=GROUP, targetname='tw_plane_%s_%s' % (kind, tg), soundName=snd,
+                startOnSpawn='0', toLocalPlayer='0', stopOnNew='1' if kind == 'gun' else '0', saveAndRestore='0')
     for i, (px, py) in enumerate(LY.plane_spawns(s)):
         ent('info_teleport_destination', (px, py, surf_z(px, py) + 10), (0, 180 if s > 0 else 0, 0), group=GROUP, targetname='plane_%s_%d' % ('ct' if s > 0 else 't', i + 1))
 

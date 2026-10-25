@@ -3,6 +3,7 @@ Ids and classes must match maps/scripts/mg_trenchwarfare.js. Text goes through d
 import os, sys, json
 import numpy as np
 from PIL import Image, ImageDraw
+import tw_cockpit
 
 OUT = sys.argv[1] if len(sys.argv) > 1 else '../out/addon'
 NAME = 'mg_trenchwarfare'
@@ -51,6 +52,7 @@ def paper(w=512, h=160):
 reticle().save(os.path.join(IMGDIR, 'reticle.png')); diamond().save(os.path.join(IMGDIR, 'locked.png'))
 cross().save(os.path.join(IMGDIR, 'impact.png')); square().save(os.path.join(IMGDIR, 'pit.png'))
 scan().save(os.path.join(IMGDIR, 'scan.png')); paper().save(os.path.join(IMGDIR, 'panel.png'))
+tw_cockpit.build(IMGDIR)
 
 # ---------------------------------------------------------------- css
 rule('.TWRoot', width='100%', height='100%')
@@ -108,6 +110,7 @@ rule('#tw_t_state', font_size='24px', color='#ffd070', margin_top='18px')
 # ---------------------------------------------------------------- layout
 def lab(id_, cls=''):
     return '<Label id="%s" class="%s" text="{s:v}" />' % (id_, cls)
+FLY = tw_cockpit.css_xml(rule, IMG, lab)
 def marker(prefix, cls):
     return '<Panel id="%s" class="%sCol" hittest="false"><Panel id="%sy" class="%sSq" hittest="false" /></Panel>' % (prefix, cls, prefix, cls)
 imp = ''.join(marker('tw_imp%d' % k, 'Imp') for k in range(3))
@@ -116,6 +119,7 @@ xml = '''<root>
 		<include src="file://{resources}/styles/custom_game/%s.css" />
 	</styles>
 	<Panel class="TWRoot" hittest="false">
+		%s
 		<Panel id="tw_banner" class="Box" hittest="false">%s%s</Panel>
 		<Panel id="tw_brief" class="Box" hittest="false">
 			<Label id="tw_brief_title" text="ORDERS" />%s%s%s%s%s
@@ -140,7 +144,7 @@ xml = '''<root>
 		</Panel>
 	</Panel>
 </root>
-''' % (NAME, lab('tw_banner_title'), lab('tw_banner_sub'),
+''' % (NAME, FLY, lab('tw_banner_title'), lab('tw_banner_sub'),
        lab('tw_brief_role'), lab('tw_brief_l1', 'BriefLine'), lab('tw_brief_l2', 'BriefLine'), lab('tw_brief_l3', 'BriefLine'), lab('tw_brief_count'),
        lab('tw_st_role'), lab('tw_st_l1', 'StLine'), lab('tw_st_l2', 'StLine'), lab('tw_st_l3', 'StLine'),
        lab('tw_toast_text'), lab('tw_prompt_text'),

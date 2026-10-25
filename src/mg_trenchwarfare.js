@@ -45,18 +45,22 @@ const CONFIG = {
   MORTAR_FIRE_ANIM: "fire",
   FRIENDLY_SPLASH: false,
   POOL: 12,
+  AMBIENT_MIN: 4, AMBIENT_MAX: 13, AMBIENT_CLEAR: 550,   // cosmetic no man's land bursts (seconds between, min distance to any player)
   AIR_ENABLED: true, AIR_SLOTS: 5, AIR_LIVES: 2, AIR_CHECK: 30,
   // arcade flight (mouse aim: the plane turns toward where the pilot looks; W/S throttle, LMB guns, RMB bomb, E bail-out view reset)
   AIR: {
     SPAWN_ALT: 1100, V_STALL: 420, V_MIN: 520, V_CRUISE: 1150, V_MAX: 1650, ACCEL: 0.6, DIVE_GAIN: 520,
-    TURN: 75, TURN_SLOW: 0.45, BANK_MAX: 65, ROLL_SIGN: -1, MODEL_YAW: 180,     // models' noses point at -x
+    TURN: 62, TURN_SLOW: 0.45, BANK_MAX: 65, ROLL_SIGN: -1, MODEL_YAW: 180,     // models' noses point at -x
+    ROLL_RATE: 160, ROLL_MAX: 85, BANK_YAW: 55, BANK_BOOST: 0.9,              // A/D roll; banked into the turn = faster turn
+    GUN_AMMO: 500, GUN_RELOAD: 6,
+    COCKPIT: { back: 26, up: 74 }, VIEW_DEFAULT: "chase",                     // "cockpit" also supported (camera at the pilot's head)
     BOX_X: 6500, BOX_Y: 5500, ALT_MAX: 5000, ALT_MIN: 120,
     GUN_INTERVAL: 0.09, GUN_DAMAGE: 16, GUN_RANGE: 5200, GUN_SPREAD: 0.014, GUN_FROM: 150,
     BOMBS: 2, BOMB_REARM: 18, BOMB_RADIUS: 420, BOMB_DAMAGE: 240, GRAVITY: 800,
     HIT_SCALE: 0.4, HIT_MIN: 12,                 // rifle bullets on a plane: weapon damage x scale (at least HIT_MIN) to the pilot
     CRASH_CREDIT: 10,                            // seconds a hit keeps kill credit for a crash
     CAM_FOLLOW: { x: 0, y: 0, z: 70 }, CAM_OFFSET: { x: -380, y: 0, z: 70 },
-    PILOT: { back: 20, up: 0 },                  // pilot pawn relative to the plane origin (cockpit)
+    PILOT: { back: 26, up: -34 },                // pilot pawn relative to the plane origin: sunk in the fuselage, head at the cockpit rim
   },
   CVARS: ["mp_respawn_on_death_t 1", "mp_respawn_on_death_ct 1", "mp_respawn_immunitytime 0", "mp_freezetime 0",
           "mp_roundtime 60", "mp_buy_anywhere 0", "mp_buytime 0", "mp_death_drop_gun 0", "mp_weapons_allow_map_placed 1",
@@ -311,7 +315,7 @@ function deploy(p, pawn) {
   if (p.role === "air" && !startFlight(p, pawn, dest)) { setRole(p, "infantry", team); deploy(p, pawn); return; }
   const sub = p.role === "infantry" ? "Hold the fire trench. Dressing stations heal you." :
               p.role === "mortar" ? "Crew " + (p.crew + 1) + ": plot at the table, fetch bombs, load and fire." :
-              "Mouse to steer, W/S throttle, LMB guns, RMB bomb. " + p.lives + " lives.";
+              "Mouse aim, A/D roll, W/S throttle, LMB guns, RMB bomb, E view. " + p.lives + " lives.";
   banner(p, ROLE_NAME[p.role], sub, 5);
 }
 
@@ -326,11 +330,13 @@ function dirOf(ang) {
   return v3(Math.cos(p) * Math.cos(y), Math.cos(p) * Math.sin(y), -Math.sin(p));
 }
 function turnToward(f, d, maxRad) {
-  const c = Math.max(-1, Math.min(1, vdot(f, d))); const a = Math.acos(c);
-  if (a <= maxRad || a < 1e-4) return vnorm(d);
-  const t = maxRad / a;                               // slerp step
-  const s = Math.sin(a);
-  return vnorm(vadd(v3(f.x * Math.sin((1 - t) * a) / s, f.y * Math.sin((1 - t) * a) / s, f.z * Math.sin((1 - t) * a) / s), d, Math.sin(t * a) / s));
+  // heading and climb steered separately (no flips through the vertical); climb limited to +-75 degrees
+  const yaw = Math.atan2(f.y, f.x), pit = Math.asin(Math.max(-1, Math.min(1, f.z)));
+  const yd = Math.atan2(d.y, d.x), pd = Math.max(-1.31, Math.min(1.31, Math.asin(Math.max(-1, Math.min(1, d.z)))));
+  let dy = yd - yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+  const ny = yaw + Math.max(-maxRad, Math.min(maxRad, dy));
+  const np = pit + Math.max(-maxRad * 0.8, Math.min(maxRad * 0.8, pd - pit));
+  return v3(Math.cos(np) * Math.cos(ny), Math.cos(np) * Math.sin(ny), Math.sin(np));
 }
 function planeOfEntity(e) {
   if (!e || !points) return undefined;
@@ -349,18 +355,16 @@ function startFlight(p, pawn, dest) {
   const base = dest ? dest.pos : ac.park;
   const f = v3(team === CT ? -1 : 1, 0, 0);
   p.air = { ac, pos: v3(base.x, base.y, base.z + A.SPAWN_ALT), f, speed: A.V_CRUISE * 0.9, throttle: 0.7, bank: 0, yawRate: 0,
-            nextGun: 0, bombs: A.BOMBS, rearmAt: 0, lastHitBy: -1, lastHitAt: -99, warned: 0 };
+            nextGun: 0, bombs: A.BOMBS, rearmAt: 0, lastHitBy: -1, lastHitAt: -99, warned: 0, ammo: A.GUN_AMMO, reloadAt: 0,
+            view: A.VIEW_DEFAULT, cam: undefined, camParent: undefined };
   try { pawn.DestroyWeapons(); pawn.GiveNamedItem("weapon_knife", false); } catch (e) {}
   try { pawn.SetMoveType(CSMoveType.NONE); } catch (e) {}
   try { pawn.SetEyeAngles({ pitch: 0, yaw: team === CT ? 180 : 0, roll: 0 }); } catch (e) {}
   placePlane(p, pawn, true);
-  try {
-    const cam = pawn.GetCustomCamera();
-    if (cam) {
-      cam.SetFollowConfig({ followEntity: ac.ent, followOffset: A.CAM_FOLLOW, cameraOffset: A.CAM_OFFSET, clipCameraOffset: true, cameraOffsetReturnStrength: 0.2 });
-      cam.SetMode(CustomCameraMode.FOLLOW_POSITION);
-    }
-  } catch (e) {}
+  setView(p, pawn);
+  const nm = ac.ent.GetEntityName(), tg = nm.slice("tw_plane_".length);
+  for (const k of ["eng", "gun"]) fire("tw_plane_" + k + "_" + tg, "SetSourceEntity", nm);
+  fire("tw_plane_eng_" + tg, "StartSound", undefined, 0.05);
   return true;
 }
 function endFlight(p, pawn, crashed) {
@@ -368,10 +372,14 @@ function endFlight(p, pawn, crashed) {
   p.air = undefined;
   if (crashed) impact({ team: p.team, k: -1, firerSlot: a.lastHitBy >= 0 && now() - a.lastHitAt < CONFIG.AIR.CRASH_CREDIT ? a.lastHitBy : p.slot,
                         x: a.pos.x, y: a.pos.y, z: a.pos.z, radius: 260, damage: 60 });
-  if (live(a.ac.ent)) a.ac.ent.Teleport({ position: a.ac.park, angles: a.ac.parkAng, velocity: v3(0, 0, 0) });
+  if (live(a.ac.ent)) {
+    fire("tw_plane_eng_" + a.ac.ent.GetEntityName().slice("tw_plane_".length), "StopSound");
+    a.ac.ent.Teleport({ position: a.ac.park, angles: a.ac.parkAng, velocity: v3(0, 0, 0) });
+  }
   a.ac.pilot = -1;
+  hClass(p, "tw_fly", "show", false);
   if (pawn && live(pawn)) {
-    try { const cam = pawn.GetCustomCamera(); if (cam) cam.SetMode(CustomCameraMode.DISABLED); } catch (e) {}
+    try { const cam = pawn.GetCustomCamera(); if (cam) { cam.SetMode(CustomCameraMode.DISABLED); if (a.camParent) cam.SetParent(a.camParent); } } catch (e) {}
     try { if (pawn.IsAlive()) pawn.SetMoveType(CSMoveType.WALK); } catch (e) {}
   }
 }
@@ -382,7 +390,8 @@ function placePlane(p, pawn, snap) {
   const vel = v3(f.x * a.speed, f.y * a.speed, f.z * a.speed);
   if (snap) a.ac.ent.Teleport({ position: a.pos, angles: ang, velocity: vel });
   else a.ac.ent.Move({ position: a.pos, angles: ang, velocity: vel });
-  const hp = v3(a.pos.x - f.x * A.PILOT.back, a.pos.y - f.y * A.PILOT.back, a.pos.z + A.PILOT.up);
+  const B = planeBasis(a);
+  const hp = vadd(vadd(a.pos, f, -A.PILOT.back), B.u, A.PILOT.up);
   if (snap) pawn.Teleport({ position: hp, velocity: vel }); else pawn.Move({ position: hp, velocity: vel });
 }
 function crashPilot(p, pawn) {
@@ -409,33 +418,57 @@ function tickAir(p, pawn, dt, pressed, held) {
   let d = dirOf(pawn.GetEyeAngles());
   let prompt = "";
   const out = Math.max(Math.abs(a.pos.x) - A.BOX_X, Math.abs(a.pos.y) - A.BOX_Y, 0);
-  if (out > 0) { d = vnorm(vadd(d, vnorm(v3(-a.pos.x, -a.pos.y, 0)), 1 + out / 400)); prompt = "Leaving the front - turning back"; }
+  if (out > 0) {
+    const c = vnorm(v3(-a.pos.x, -a.pos.y, 0)), h = vnorm(vadd(v3(d.x, d.y, 0), c, 2 + out / 200));
+    const pz = Math.max(-0.17, Math.min(0.34, d.z)), ph = Math.sqrt(1 - pz * pz);
+    d = v3(h.x * ph, h.y * ph, pz); prompt = "Leaving the front - turning back";
+  }
   if (a.pos.z > A.ALT_MAX) { d = vnorm(v3(d.x, d.y, Math.min(d.z, -0.2))); prompt = "Too high - engine starving"; }
   if (a.speed < A.V_STALL) { d = vnorm(v3(d.x, d.y, Math.min(d.z, -0.5))); prompt = "STALL - nose down"; }
   const gz = groundZ(a.pos.x, a.pos.y);
   if (a.pos.z - gz < 260 && d.z < 0.15) { d = vnorm(v3(d.x, d.y, 0.15)); if (!prompt) prompt = "PULL UP"; }
-  // turn rate falls off at low speed
+  // roll: A/D bank the wings (left = negative); banking into the mouse turn tightens it, a held bank turns on its own
+  const rollIn = out > 0 ? 0 : ((held & CSInputs.RIGHT) ? 1 : 0) - ((held & CSInputs.LEFT) ? 1 : 0);
   const k = Math.max(A.TURN_SLOW, Math.min(1.15, a.speed / A.V_CRUISE));
+  const hd = Math.atan2(d.y, d.x) - Math.atan2(a.f.y, a.f.x);
+  const want = Math.atan2(Math.sin(hd), Math.cos(hd));                        // + = target to the left
+  const sb = Math.sin(a.bank * Math.PI / 180);
+  const into = Math.max(0, -Math.sign(want) * sb);                            // right bank (+) helps right turns (want < 0)
   const f0 = a.f;
-  a.f = turnToward(a.f, d, A.TURN * k * Math.PI / 180 * dt);
+  a.f = turnToward(a.f, d, A.TURN * k * (1 + A.BANK_BOOST * into + (out > 0 ? 1 : 0)) * Math.PI / 180 * dt);
+  if (out <= 0 && (rollIn !== 0 || Math.abs(a.bank) > 30)) {
+    const yr = -A.BANK_YAW * k * sb * Math.PI / 180 * dt;                       // coordinated turn from the bank alone
+    const c = Math.cos(yr), sn = Math.sin(yr);
+    a.f = vnorm(v3(a.f.x * c - a.f.y * sn, a.f.x * sn + a.f.y * c, a.f.z));
+  }
   const yaw0 = Math.atan2(f0.y, f0.x), yaw1 = Math.atan2(a.f.y, a.f.x);
   let dy = yaw1 - yaw0; if (dy > Math.PI) dy -= 2 * Math.PI; if (dy < -Math.PI) dy += 2 * Math.PI;
   a.yawRate = a.yawRate * 0.85 + (dy / Math.max(dt, 1e-3)) * 0.15;
-  const bankT = Math.max(-A.BANK_MAX, Math.min(A.BANK_MAX, a.yawRate * 180 / Math.PI * 0.9));
-  a.bank += (bankT - a.bank) * Math.min(1, dt * 4);
+  if (rollIn !== 0) a.bank = Math.max(-A.ROLL_MAX, Math.min(A.ROLL_MAX, a.bank + rollIn * A.ROLL_RATE * dt));
+  else {
+    const bankT = Math.max(-A.BANK_MAX, Math.min(A.BANK_MAX, -a.yawRate * 180 / Math.PI * 0.9));
+    a.bank += (bankT - a.bank) * Math.min(1, dt * 2.5);
+  }
   // speed: throttle target, gravity along the flight path
   const target = A.V_MIN + (A.V_MAX - A.V_MIN) * a.throttle;
   a.speed += (target - a.speed) * Math.min(1, dt * 0.6) - A.DIVE_GAIN * a.f.z * dt;
   a.speed = Math.max(A.V_STALL * 0.7, Math.min(A.V_MAX * 1.25, a.speed));
+  // ground avoidance: below the floor height the nose is lifted directly
+  if (a.pos.z - gz < 200 && a.f.z < 0.12) a.f = vnorm(v3(a.f.x, a.f.y, Math.min(0.12, a.f.z + 2.5 * dt)));
   const np = vadd(a.pos, a.f, a.speed * dt);
+  np.x = Math.max(-A.BOX_X - 600, Math.min(A.BOX_X + 600, np.x)); np.y = Math.max(-A.BOX_Y - 600, Math.min(A.BOX_Y + 600, np.y));
   // collision with the world along the step, or the ground
   const tr = Instance.TraceLine({ start: a.pos, end: np, ignoreEntity: [a.ac.ent, pawn], ignorePlayers: true });
   if ((tr && tr.didHit && !tr.startedInSolid) || np.z < gz + A.ALT_MIN * 0.25) { crashPilot(p, pawn); return ""; }
   a.pos = np;
   placePlane(p, pawn, false);
-  // guns
-  if ((held & CSInputs.ATTACK) && t >= a.nextGun) {
+  if (a.view === "cockpit") { const cam = a.cam; if (cam && live(cam)) { try { cam.Move({ position: cockpitPos(a) }); } catch (e) {} } }
+  // guns (belt; a short re-arm when empty)
+  if (a.ammo <= 0 && t >= a.reloadAt) { a.ammo = A.GUN_AMMO; }
+  if ((held & CSInputs.ATTACK) && t >= a.nextGun && a.ammo > 0) {
     a.nextGun = t + A.GUN_INTERVAL;
+    if (--a.ammo <= 0) { a.reloadAt = t + A.GUN_RELOAD; toast(p, "Belt empty - re-arming", 2); }
+    if ((a.ammo % 3) === 0) fire("tw_plane_gun_" + a.ac.ent.GetEntityName().slice("tw_plane_".length), "StartSound");
     const s = v3(a.pos.x + a.f.x * A.GUN_FROM, a.pos.y + a.f.y * A.GUN_FROM, a.pos.z + 40 + a.f.z * A.GUN_FROM);
     const dir = vnorm(v3(a.f.x + gauss() * A.GUN_SPREAD, a.f.y + gauss() * A.GUN_SPREAD, a.f.z + gauss() * A.GUN_SPREAD));
     const g = Instance.TraceLine({ start: s, end: vadd(s, dir, A.GUN_RANGE), ignoreEntity: [a.ac.ent, pawn], traceHitboxes: true });
@@ -456,12 +489,86 @@ function tickAir(p, pawn, dt, pressed, held) {
     bombs.push({ pos: v3(a.pos.x, a.pos.y, a.pos.z - 20), vel: v3(a.f.x * a.speed, a.f.y * a.speed, a.f.z * a.speed), team: pawn.GetTeamNumber(), slot: p.slot });
     toast(p, "Bomb away!", 1.5);
   }
-  hText(p, "tw_st_role", "AIRCREW");
-  hText(p, "tw_st_l1", "Speed " + Math.round(a.speed * 0.0254 * 3.6) + " km/h   Alt " + Math.round((a.pos.z - gz) * 0.0254) + " m   Throttle " + Math.round(a.throttle * 100) + "%");
-  hText(p, "tw_st_l2", "Bombs " + a.bombs + "/" + A.BOMBS + (a.bombs < A.BOMBS ? "  (rearm " + Math.max(0, a.rearmAt - t).toFixed(0) + "s)" : ""));
-  hText(p, "tw_st_l3", "Lives " + p.lives + "   Kills " + p.kills);
-  hClass(p, "tw_status", "show", true);
+  drawFlight(p, a, gz);
   return prompt;
+}
+function planeBasis(a) {
+  const f = a.f;
+  let r = v3(f.y, -f.x, 0); const rl = vlen(r);
+  r = rl < 1e-3 ? v3(0, -1, 0) : v3(r.x / rl, r.y / rl, 0);
+  const u = v3(r.y * f.z - r.z * f.y, r.z * f.x - r.x * f.z, r.x * f.y - r.y * f.x);
+  const b = a.bank * Math.PI / 180, c = Math.cos(b), s = Math.sin(b);
+  return { f, r: vadd(v3(r.x * c, r.y * c, r.z * c), u, -s), u: vadd(v3(u.x * c, u.y * c, u.z * c), r, s) };
+}
+function cockpitPos(a) {
+  const B = planeBasis(a), C = CONFIG.AIR.COCKPIT;
+  return vadd(vadd(a.pos, B.f, -C.back), B.u, C.up);
+}
+function setView(p, pawn) {
+  const a = p.air, A = CONFIG.AIR;
+  let cam; try { cam = pawn.GetCustomCamera(); } catch (e) {}
+  if (!cam) return;
+  a.cam = cam;
+  try {
+    if (a.view === "cockpit") {
+      if (a.camParent === undefined) { try { a.camParent = cam.GetParent() || null; cam.SetParent(undefined); } catch (e) { a.camParent = null; } }
+      cam.Teleport({ position: cockpitPos(a) });
+      cam.SetMode(CustomCameraMode.CONTROLLED_POSITION);
+    } else {
+      cam.SetFollowConfig({ followEntity: a.ac.ent, followOffset: A.CAM_FOLLOW, cameraOffset: A.CAM_OFFSET, clipCameraOffset: true, cameraOffsetReturnStrength: 0.2 });
+      cam.SetMode(CustomCameraMode.FOLLOW_POSITION);
+    }
+  } catch (e) {}
+}
+const NEEDLE = (deg) => "a" + (((Math.round(deg / 5) % 72) + 72) % 72);
+function drawFlight(p, a, gz) {
+  const A = CONFIG.AIR, t = now();
+  const kmh = a.speed * 0.0254 * 3.6, altm = Math.max(0, (a.pos.z - gz) * 0.0254);
+  const hdg = ((Math.atan2(a.f.x, a.f.y) * 180 / Math.PI) + 360) % 360;   // north = +y
+  hClass(p, "tw_fly", "show", true);
+  hClass(p, "tw_status", "show", false);
+  hSwap(p, "tw_n_asi", "rot", NEEDLE(-150 + 300 * Math.min(1, kmh / 300)));
+  hSwap(p, "tw_n_alt", "rot", NEEDLE((altm % 1000) / 1000 * 360));
+  hSwap(p, "tw_n_rpm", "rot", NEEDLE(-150 + 300 * (0.25 + 0.75 * a.throttle)));
+  hSwap(p, "tw_card", "rot", NEEDLE(-hdg));
+  hSwap(p, "tw_n_bank", "rot", NEEDLE(a.bank));
+  hText(p, "tw_alt_drum", String(Math.floor(altm / 1000)) + " " + String(Math.floor(altm % 1000 / 100)));
+  hText(p, "tw_hdg_txt", ("00" + Math.round(hdg) % 360).slice(-3));
+  hText(p, "tw_ammo_txt", ("000" + Math.max(0, a.ammo)).slice(-4));
+  hClass(p, "tw_bomb1", "on", a.bombs >= 1); hClass(p, "tw_bomb2", "on", a.bombs >= 2);
+  hText(p, "tw_fly_info", "LIVES " + p.lives + "   KILLS " + p.kills + (a.ammo <= 0 ? "   RE-ARMING " + Math.max(0, a.reloadAt - t).toFixed(0) : "") +
+        (a.bombs < A.BOMBS ? "   BOMB " + Math.max(0, a.rearmAt - t).toFixed(0) + "s" : ""));
+}
+// upgraded infantry can swap between the streak weapon and their scoped rifle (WALK + USE, or !swap); ammo carries over
+function swapRifle(p, pawn) {
+  if (!p.upgraded || p.role !== "infantry" || now() < (p.swapAt || 0)) return;
+  const team = pawn.GetTeamNumber(), base = CONFIG.INF_RIFLE[team], up = CONFIG.UPGRADE[team];
+  const have = pawn.FindWeapon(up) ? up : pawn.FindWeapon(base) ? base : undefined;
+  if (!have) return;
+  const other = have === up ? base : up;
+  const w = pawn.FindWeapon(have);
+  p.ammo = p.ammo || {};
+  try { p.ammo[have] = [w.GetClipAmmo(), w.GetReserveAmmo()]; } catch (e) {}
+  try { pawn.DestroyWeapon(w); } catch (e) {}
+  if (!pawn.FindWeapon(other)) pawn.GiveNamedItem(other, true);
+  const nw = pawn.FindWeapon(other), saved = p.ammo[other];
+  if (nw && saved) { try { nw.SetClipAmmo(saved[0]); nw.SetReserveAmmo(saved[1]); } catch (e) {} }
+  p.swapAt = now() + 1.5;
+  toast(p, (other === up ? CONFIG.UPGRADE_NAME[team] : CONFIG.RIFLE_NAME[team]) + " in hand", 2);
+}
+// cosmetic shell bursts and dirt showers in no man's land, never near a player
+let nextAmbient = 0;
+function tickAmbient() {
+  const t = now(); if (t < nextAmbient) return;
+  nextAmbient = t + CONFIG.AMBIENT_MIN + Math.random() * (CONFIG.AMBIENT_MAX - CONFIG.AMBIENT_MIN);
+  for (let tries = 0; tries < 6; tries++) {
+    const x = (Math.random() * 2 - 1) * 1250, y = (Math.random() * 2 - 1) * 3200;
+    let near = false;
+    for (let s = 0; s < 64 && !near; s++) { const pw = pawnOf(s); if (pw && pw.IsAlive() && dist2(pw.GetAbsOrigin(), { x, y }) < CONFIG.AMBIENT_CLEAR) near = true; }
+    if (near) continue;
+    effects(v3(x, y, groundZ(x, y) + 8), true);
+    return;
+  }
 }
 function tickBombs(dt) {
   const A = CONFIG.AIR;
@@ -512,9 +619,7 @@ function fireMortar(team, k, firerSlot) {
   for (const s of [c.a, c.b]) if (s >= 0) toast(P(s), "Shot out! Splash in " + (t - now()).toFixed(1) + "s", 2.5);
   return true;
 }
-function impact(sh) {
-  const z = sh.z !== undefined ? sh.z : groundZ(sh.x, sh.y);
-  const pos = v3(sh.x, sh.y, z + 8);
+function effects(pos, quiet) {
   const i = (poolIdx++ % CONFIG.POOL) + 1;
   for (const nm of ["tw_boom_fx_", "tw_dirt_fx_", "tw_boom_snd_", "tw_shake_"]) {
     const e = live(Instance.FindEntityByName(nm + i)); if (e) e.Teleport({ position: pos });
@@ -522,7 +627,12 @@ function impact(sh) {
   fire("tw_boom_fx_" + i, "Stop"); fire("tw_boom_fx_" + i, "Start", undefined, 0.02);
   fire("tw_dirt_fx_" + i, "Stop"); fire("tw_dirt_fx_" + i, "Start", undefined, 0.02);
   fire("tw_boom_snd_" + i, "StartSound", undefined, 0.02);
-  fire("tw_shake_" + i, "StartShake", undefined, 0.02);
+  if (!quiet) fire("tw_shake_" + i, "StartShake", undefined, 0.02);
+}
+function impact(sh) {
+  const z = sh.z !== undefined ? sh.z : groundZ(sh.x, sh.y);
+  const pos = v3(sh.x, sh.y, z + 8);
+  effects(pos, false);
   if (sh.k >= 0) { const c = crews[sh.team][sh.k]; c.impacts.unshift({ x: sh.x, y: sh.y }); if (c.impacts.length > 3) c.impacts.length = 3; }
   const R = sh.radius || CONFIG.SHELL_RADIUS, DMG = sh.damage || CONFIG.SHELL_DAMAGE;
   // damage: credited to whoever fired
@@ -669,6 +779,7 @@ function think() {
   if (!points) loadPoints();
   tickShells();
   tickBombs(dt);
+  tickAmbient();
   airCheck();
   for (let s = 0; s < 64; s++) {
     const ctl = Instance.GetPlayerController(s);
@@ -699,6 +810,7 @@ function think() {
       hClass(p, "tw_toast", "show", t < p.toastUntil); hClass(p, "tw_banner", "show", t < p.bannerUntil);
       continue;
     }
+    if (p.role === "infantry" && p.upgraded && (pressed & CSInputs.USE) && (held & CSInputs.WALK)) swapRifle(p, pawn);
     p.healing = false;
     const hp = points.heal[team] || [];
     const o = pawn.GetAbsOrigin();
@@ -784,7 +896,7 @@ Instance.OnPlayerKill(({ player, attacker }) => {
   const victim = live(player); if (!victim) return;
   const vs = slotOfPawn(victim); const vp = vs >= 0 ? P(vs) : undefined;
   if (vp) {
-    vp.streak = 0; vp.upgraded = false; vp.carrying = false;
+    vp.streak = 0; vp.upgraded = false; vp.carrying = false; vp.ammo = {};
     if (vp.inSight) leaveSight(vp, victim);
     if (vp.role === "air") { vp.lives--; if (vp.lives <= 0) toast(vp, "Shot down - back to the ground war", 4); }
   }
@@ -799,14 +911,14 @@ Instance.OnPlayerKill(({ player, attacker }) => {
     const w = CONFIG.UPGRADE[team];
     const old = ap.FindWeapon(CONFIG.INF_RIFLE[team]); if (old) { try { ap.DestroyWeapon(old); } catch (e) {} }
     if (w && !ap.FindWeapon(w)) ap.GiveNamedItem(w, true);
-    a.upgraded = true;
-    toast(a, CONFIG.UPGRADE_NAME[team] + " issued for your streak!", 4);
+    a.upgraded = true; a.ammo = {};
+    toast(a, CONFIG.UPGRADE_NAME[team] + " issued for your streak!  (SHIFT+E or !swap: back to the " + CONFIG.RIFLE_NAME[team] + ")", 5);
   }
 });
 Instance.OnBulletImpact(({ weapon, hitEntity }) => {
   const ac = planeOfEntity(hitEntity); if (!ac) return;
   let owner; try { owner = toPawn(weapon.GetOwner()); } catch (e) {}
-  let dmg = 30; try { const d = weapon.GetData(); if (d && d.damage) dmg = d.damage; } catch (e) {}
+  let dmg = 30; try { const d = weapon.GetData(); if (d) dmg = d.GetDamage() || 30; } catch (e) {}
   hitPilot(ac, Math.max(CONFIG.AIR.HIT_MIN, dmg * CONFIG.AIR.HIT_SCALE), owner);
 });
 Instance.OnPlayerChat(({ player, text }) => {
@@ -816,6 +928,7 @@ Instance.OnPlayerChat(({ player, text }) => {
   if (t === "!mortar" || t === "!artillery") { p.pref = "mortar"; toast(p, "You'll join a mortar crew when you next deploy (if a seat is free)", 4); }
   else if (t === "!infantry" || t === "!rifle") { p.pref = "infantry"; toast(p, "You'll go to the fire trench when you next deploy", 4); }
   else if (t === "!air" || t === "!pilot") { p.pref = "air"; toast(p, CONFIG.AIR_ENABLED ? "You're more likely to be posted to the aerodrome" : "No aircraft yet - noted for later", 4); }
+  else if (t === "!swap") { const pw = toPawn(player); if (pw && pw.IsAlive()) swapRifle(p, pw); }
   else if (t === "!random") { p.pref = ""; toast(p, "Roles will be chosen for you", 3); }
   else if (t === "!roles") {
     const cnt = (team, r) => { let n = 0; for (const q of players.values()) if (q.team === team && q.role === r) n++; return n; };
