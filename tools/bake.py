@@ -159,6 +159,7 @@ def bake(mesh, shaders, size=1024, res=None, ground=None, fill=0.8, normal_stren
     N = (mesh.N[Fv] * b[..., None]).sum(1); N /= np.linalg.norm(N, axis=1, keepdims=True) + 1e-9
     T = (mesh.T[Fv] * b[..., None]).sum(1)
     ch = mesh.FC[fi]; pt = mesh.FP[fi]
+    A = (mesh.A[Fv] * b[..., None]).sum(1) if getattr(mesh, 'A', None) is not None else None   # extra vertex attributes
     W = np.array([[c['w'], c['h']] for c in charts])
     S = T * W[ch]
     # part-local coordinates
@@ -173,11 +174,13 @@ def bake(mesh, shaders, size=1024, res=None, ground=None, fill=0.8, normal_stren
     col = np.zeros((k, 3), np.float32); rough = np.full(k, 0.8, np.float32); metal = np.zeros(k, np.float32); hgt = np.zeros(k, np.float32)
     mats = np.array([charts[c]['mat'] for c in ch])
     for name in np.unique(mats):
-        sel = mats == name
-        ctx = Ctx(P=P[sel], N=N[sel], S=S[sel], L=L[sel], part=pt[sel], chart=ch[sel], ao=ao[sel], edge=edge[sel], cav=cav[sel],
-                  parts=mesh.parts, lo=lo, hi=hi, n=int(sel.sum()), d=d, chart_info=charts)
-        out = shaders[name](ctx)
-        col[sel] = out['color']; rough[sel] = out.get('rough', 0.8); metal[sel] = out.get('metal', 0.0); hgt[sel] = out.get('height', 0.0)
+        idx_all = np.nonzero(mats == name)[0]
+        for c0 in range(0, len(idx_all), 600000):          # chunked: procedural shaders allocate many temporaries per texel
+            sel = idx_all[c0:c0 + 600000]
+            ctx = Ctx(P=P[sel], N=N[sel], S=S[sel], L=L[sel], part=pt[sel], chart=ch[sel], ao=ao[sel], edge=edge[sel], cav=cav[sel],
+                      parts=mesh.parts, lo=lo, hi=hi, n=len(sel), d=d, chart_info=charts, A=A[sel] if A is not None else None)
+            out = shaders[name](ctx)
+            col[sel] = out['color']; rough[sel] = out.get('rough', 0.8); metal[sel] = out.get('metal', 0.0); hgt[sel] = out.get('height', 0.0)
     def img(vals, ch_):
         im = np.zeros((size, size, ch_) if ch_ > 1 else (size, size), np.float32)
         im[mask] = vals

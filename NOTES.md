@@ -2,6 +2,28 @@
 
 Read this first when resuming. Newest state at the top.
 
+## State 2026-10-26 ~05:30 ACDT (update 3 delivered: tw3_content_01..05.zip, tw3_map_main.zip, update3_mg_trenchwarfare.bat)
+
+- HD textures: every procedural prop now uses CS2 game textures where one fits (`tools/stock.py`). New custom csgo_complex vmats exported
+  from the game files into `materials/models/tw/stock/` (`export_custom`, `CUSTOM` table): hessian a/b/c (pbr_defaults cloth001, tinted),
+  canvas / canvas_dark, paint_feldgrau / khaki / dark / white (metalhull003a chipped plate: paint applied to the neutral grey, rust kept,
+  roughness derived), brass / steel (de_mirage metal_basic_1), rope (rope_braid_1), boards_dark / boards_warm (train boards 02, tinted).
+  Stock vmats used directly: train boards 02 wet, rusty_metal_1, metal_rust_001, ancient mud 03 wet. Modes: plank / box / cyl / chart
+  (the chart's own unwrap at real scale), `swap` turns the tile 90 degrees. ASSIGN values may be lists = variants picked per part
+  (sandbags mix 3 hessian shades, revetments mix 3 board shades). Unique art stays baked: decals, map table, coals, water, glass.
+- Decals: `geo.decal(img_id, origin, u, v, size)` quads + `spec['decal_imgs']` -> alpha-tested `<prop>_decal` atlas (crate stencils,
+  red crosses, sign lettering). `tools/clean_stale.py` drops material files no vmdl references any more.
+- Aircraft (`tools/weather_ext.py`, source kept in `out/ext_src/`): the Sketchfab models were yawed ~30 deg off their axis - now rotated
+  nose +x and centred; ~50 materials -> one 4096 atlas per plane (planar charts, min-area rects), baked with original colours + cloth /
+  wood / metal detail + object-space wear (castor oil + soot aft of the engine, wheel mud, faded dope, worn edges, repair patches,
+  bullet holes), compound physics hulls (wings, fuselage, tail). SPAD prop-blur disc replaced with real 2-blade prop + hub.
+  Script: MODEL_YAW 0, PITCH_SIGN -1, ROLL_SIGN 1 (Source pitch + = nose down); pilot pawn hidden in flight (SetModelScale 0.02 +
+  alpha 0, restored on landing/reset), PILOT/COCKPIT offsets moved to the real cockpit (x ~ +46).
+- Map: signs on the revetments (post against the wall, face to the walkway, niche walls excluded), no sandbag scraps on wall stubs
+  < 40 u, weeds check overlaps, parked planes yaw fixed for nose +x, banner rewritten (roles, controls, chat commands).
+- Gameplay check (theory): infantry eye on the fire-step clears the parapet by ~27 u; clips keep infantry in the trench system by design;
+  mortar seats/table/box/tube reachable inside the pit clip; pilots drawn every 30 s and air-spawned 1100 above their field (no walk-up yet).
+
 ## State 2026-10-26 ~00:00 ACDT
 
 Done this session (since the first delivery):

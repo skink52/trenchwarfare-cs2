@@ -169,7 +169,9 @@ def sign(lines, seed=0, lod=0, w=40, h=12, post_h=60, color=(0.9, 0.88, 0.82), l
     rng = np.random.RandomState(seed)
     m = geo.Mesh()
     board_chart = len(m.charts)
-    m.add(geo.plank(w, h, 1.2, mat='wood', seg=2, div=(4, 1, 1), warp=0.3, seed=seed, R=geo.euler(0, 0, 90), t=(0, -0.2, post_h - h / 2 - 2), tone=0.7))
+    m.add(geo.plank(w, h, 1.2, mat='board', seg=2, div=(4, 1, 1), warp=0.08, seed=seed, R=geo.euler(0, 0, 90), t=(0, -0.2, post_h - h / 2 - 2), tone=0.7))
+    zc = post_h - h / 2 - 2
+    m.add(geo.decal(0, (-w * 0.47, -0.8, zc - h * 0.44), (1, 0, 0), (0, 0, 1), (w * 0.94, h * 0.88), lift=0.14))
     # the plank's front face (normal -y) chart: rbox face order: +z,-z,+x,-x,+y,-y -> after rotation x90 the -y face was +z
     m.add(geo.tube([(0, 1.6, -6), (0.5, 1.6, post_h + 2)], 1.6, sides=8, mat='wood', part=geo.frame(seed=seed + 1)))
     for k in range(2):
@@ -287,26 +289,31 @@ def specs():
         m0, tops = crate(L, Wd, H, seed=hash(name) % 997)
         m1, _ = crate(L, Wd, H, seed=hash(name) % 997, lod=1)
         img = text_img(txt, 512, 192, color=(0.08, 0.07, 0.06), font=FONT)
-        tops_ids = tops
-        mk = (lambda img, L, Wd, H: (lambda c: S.decal_proj(c, img, W, (-L * 0.4, -Wd * 0.4, H), (1, 0, 0), (0, 1, 0), (L * 0.8, Wd * 0.8), facing=(0, 0, 1))))(img, L, Wd, H)
-        out[name] = dict(lods=[m0, m1], size=512, ground=0.0, shaders={'wood': mk, 'rope': rope}, surface='wood',
+        for mm in (m0, m1):
+            mm.add(geo.decal(0, (-L * 0.4, -Wd * 0.4, H + 0.6), (1, 0, 0), (0, 1, 0), (L * 0.8, Wd * 0.8), lift=0.16))
+        out[name] = dict(lods=[m0, m1], size=512, ground=0.0, shaders={'wood': W, 'rope': rope}, surface='wood', decal_imgs=[img],
+                         stock={'wood': 'boards', 'rope': 'rope'},
                          hulls=[np.array([[x, y, z] for x in (-L / 2, L / 2) for y in (-Wd / 2, Wd / 2) for z in (0, H + 0.6)])], res=0.5)
+    bst = {'brass': 'brass', 'proj': 'paint_khaki'}
     bsh = {'brass': S.brass, 'proj': lambda c: S.painted_steel(c, S._c(0.32, 0.34, 0.28), chip=0.3, mud_top=2, edge_k=0.2)}
-    out['shell_pile'] = dict(lods=[shell_pile(1), shell_pile(1, 1)], size=1024, ground=0.0, metal=True, shaders=bsh, surface='metal',
+    out['shell_pile'] = dict(lods=[shell_pile(1), shell_pile(1, 1)], size=1024, ground=0.0, metal=True, shaders=bsh, stock=bst, surface='metal',
                              hulls=[np.array([[x, y, z] for x in (-12, 12) for y in (-9, 9) for z in (0, 9)])], res=0.4)
-    out['casings'] = dict(lods=[casings(2), casings(2, 1)], size=512, ground=0.0, metal=True, shaders=bsh, surface='metal', hulls=[], res=0.4)
+    out['casings'] = dict(lods=[casings(2), casings(2, 1)], size=512, ground=0.0, metal=True, shaders=bsh, stock=bst, surface='metal', hulls=[], res=0.4)
     hsh = {'helmet': lambda c: S.painted_steel(c, S._c(0.30, 0.31, 0.22), chip=0.3, mud_top=2, edge_k=0.15)}
-    out['helmet_brodie'] = dict(lods=[helmet('brodie', 1)], size=256, ground=0.0, metal=True, shaders=hsh, surface='metal', hulls=[], res=0.25)
+    out['helmet_brodie'] = dict(lods=[helmet('brodie', 1)], size=256, ground=0.0, metal=True, shaders=hsh, stock={'helmet': 'paint_khaki'}, surface='metal', hulls=[], res=0.25)
     hsh2 = {'helmet': lambda c: S.painted_steel(c, S._c(0.36, 0.38, 0.33), chip=0.3, mud_top=2, edge_k=0.15)}
-    out['helmet_stahl'] = dict(lods=[helmet('stahl', 2)], size=256, ground=0.0, metal=True, shaders=hsh2, surface='metal', hulls=[], res=0.25)
+    out['helmet_stahl'] = dict(lods=[helmet('stahl', 2)], size=256, ground=0.0, metal=True, shaders=hsh2, stock={'helmet': 'paint_feld'}, surface='metal', hulls=[], res=0.25)
     ssh = {'wood': W, 'canvas': lambda c: S.canvas(c, mud_top=2), 'gunsteel': lambda c: S.rust_steel(c, mud_top=1)}
-    out['stretcher'] = dict(lods=[stretcher(3)], size=512, ground=0.0, metal=True, shaders=ssh, surface='cloth',
+    out['stretcher'] = dict(lods=[stretcher(3)], size=512, ground=0.0, metal=True, shaders=ssh, stock={'wood': 'boards', 'canvas': 'canvas', 'gunsteel': 'rust_fine'}, surface='cloth',
                             hulls=[np.array([[x, y, z] for x in (-46, 46) for y in (-12, 12) for z in (0, 6)])], res=0.5)
     # red-cross crate
     m0, tops = crate(30, 20, 18, seed=41); m1, _ = crate(30, 20, 18, seed=41, lod=1)
     rc = cross_img()
+    for mm in (m0, m1):
+        mm.add(geo.decal(0, (-9, -9, 18.6), (1, 0, 0), (0, 1, 0), (18, 18), lift=0.16))
+        mm.add(geo.decal(0, (-7, -10.0, 2), (1, 0, 0), (0, 0, 1), (14, 14), lift=0.14))
     medic = lambda c: S.decal_proj(S.decal_proj(c, rc, W, (-9, -9, 18), (1, 0, 0), (0, 1, 0), (18, 18), facing=(0, 0, 1)), rc, None, (-7, -10.5, 2), (1, 0, 0), (0, 0, 1), (14, 14), facing=(0, -1, 0)) if False else S.decal_proj(c, rc, lambda cc: S.decal_proj(cc, rc, W, (-7, -10.5, 2), (1, 0, 0), (0, 0, 1), (14, 14), facing=(0, -1, 0)), (-9, -9, 18), (1, 0, 0), (0, 1, 0), (18, 18), facing=(0, 0, 1))
-    out['crate_medical'] = dict(lods=[m0, m1], size=512, ground=0.0, shaders={'wood': medic, 'rope': rope},
+    out['crate_medical'] = dict(lods=[m0, m1], size=512, ground=0.0, shaders={'wood': W, 'rope': rope}, decal_imgs=[rc], stock={'wood': 'boards', 'rope': 'rope'},
                                 surface='wood', hulls=[np.array([[x, y, z] for x in (-15, 15) for y in (-10, 10) for z in (0, 18.6)])], res=0.5)
     signs = {'sign_dressing_gb': ['DRESSING', 'STATION'], 'sign_dressing_de': ['VERBAND-', 'PLATZ'], 'sign_mortars_gb': ['TRENCH', 'MORTARS'],
              'sign_mortars_de': ['MINEN-', 'WERFER'], 'sign_firetrench_gb': ['FIRE', 'TRENCH'], 'sign_firetrench_de': ['FEUER-', 'GRABEN'],
@@ -317,21 +324,21 @@ def specs():
         img = text_img(lines, 512, 160, color=(0.88, 0.86, 0.80) if not name.endswith('_de') and name not in ('sign_unter_den_linden', 'sign_achtung') else (0.10, 0.09, 0.08))
         base = W if not (name.endswith('_de') or name in ('sign_unter_den_linden', 'sign_achtung')) else (lambda c: S.painted_steel(c, S._c(0.78, 0.76, 0.70), chip=0.28, mud_top=4, edge_k=0.3))
         # board front face: rbox faces are +z,-z,+x,-x,+y,-y; rotated about x by 90 -> local -y face points to -y... use both big faces
-        ids = [ch + 0, ch + 1]
-        out[name] = dict(lods=[m0], size=512, ground=0.0, metal=True, shaders={'wood': (lambda img, base: (lambda c: S.decal_proj(c, img, base, (-19, 0, 47), (1, 0, 0), (0, 0, 1), (38, 11), facing=(0, -1, 0))))(img, base),
-                                                                         'gunsteel': lambda c: S.rust_steel(c, mud_top=0)}, surface='wood', hulls=[], res=0.5)
+        enamel = name.endswith('_de') or name in ('sign_unter_den_linden', 'sign_achtung')
+        out[name] = dict(lods=[m0], size=512, ground=0.0, metal=True, shaders={'wood': W, 'board': base, 'gunsteel': lambda c: S.rust_steel(c, mud_top=0)},
+                         decal_imgs=[img], stock={'wood': 'boards', 'board': 'paint_white' if enamel else 'boards', 'gunsteel': 'rust_fine'}, surface='wood', hulls=[], res=0.5)
     m0, mapc = table_station(5)
     mapimg = np.asarray(Image.open(__import__('os').path.join(__import__('os').path.dirname(__file__), 'trench_map_small.png')).convert('RGBA'), np.float32) / 255 \
         if __import__('os').path.exists(__import__('os').path.join(__import__('os').path.dirname(__file__), 'trench_map_small.png')) else text_img(['MAP'], 256, 256)
-    out['plotting_table'] = dict(lods=[m0], size=1024, ground=0.0, metal=True,
+    out['plotting_table'] = dict(lods=[m0], size=1024, ground=0.0, metal=True, stock={'wood': 'boards', 'gunsteel': 'paint_dark'},
                                  shaders={'wood': W, 'gunsteel': lambda c: S.painted_steel(c, S._c(0.12, 0.12, 0.11), chip=0.2, mud_top=0),
                                           'map': lambda c: S.decal_proj(c, mapimg, lambda cc: S.canvas(cc, base=S._c(0.80, 0.76, 0.64), mud_top=0, stains=0.3), (-20, -12, 34), (1, 0, 0), (0, 1, 0), (34, 24), facing=(0, 0, 1), weather=False)},
                                  surface='wood', hulls=[np.array([[x, y, z] for x in (-24, 24) for y in (-15, 15) for z in (0, 35)])], res=0.5)
-    out['ammo_box_mortar'] = dict(lods=[ammo_box(7), ammo_box(7, 1)], size=1024, ground=0.0, metal=True,
+    out['ammo_box_mortar'] = dict(lods=[ammo_box(7), ammo_box(7, 1)], size=1024, ground=0.0, metal=True, stock={'wood': 'boards', 'rope': 'rope', 'bomb': 'paint_feld'},
                                   shaders={'wood': W, 'rope': rope, 'bomb': lambda c: S.painted_steel(c, S._c(0.35, 0.36, 0.30), chip=0.25, mud_top=0, edge_k=0.2)},
                                   surface='wood', hulls=[np.array([[x, y, z] for x in (-17, 17) for y in (-11, 11) for z in (0, 14)])], res=0.5)
     m0, hh = hangar(0, 8); m1, _ = hangar(1, 8)
-    out['hangar'] = dict(lods=[m0, m1], lod_thresholds=[0.0, 60.0], ground=0.0,
+    out['hangar'] = dict(lods=[m0, m1], lod_thresholds=[0.0, 60.0], ground=0.0, stock={'wood': 'boards', 'canvas': 'canvas', 'canvas_in': 'canvas_dark'},
                          atlases={'main': dict(size=2048), 'canvas': dict(size=2048, backfaces=False)},
                          shaders={'wood': lambda c: S.wood(c, mud_top=20, wet=0.3), 'canvas': lambda c: S.canvas(c, base=S._c(0.62, 0.58, 0.47), mud_top=24),
                                   'canvas_in': lambda c: S.canvas(c, base=S._c(0.50, 0.46, 0.37), mud_top=10)},

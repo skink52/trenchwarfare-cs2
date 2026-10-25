@@ -1,6 +1,6 @@
 """Builds every prop (or the names given) and records model paths/bounds in out/props.json."""
 import os, sys, json, traceback
-import build_prop, p_sandbag, p_trench, p_wire, p_trees, p_wreck, p_misc, p_minenwerfer
+import build_prop, p_sandbag, p_trench, p_wire, p_trees, p_wreck, p_misc, p_minenwerfer, p_trenchlife
 
 def all_specs():
     sp = {}
@@ -9,7 +9,7 @@ def all_specs():
     sp['sandbag_low'] = p_sandbag.spec(5, courses=2)
     sp['sandbag_low_128'] = p_sandbag.spec(6, courses=2, length=128)
     sp['sandbag_wall_128'] = p_sandbag.spec(7, courses=3, length=128)
-    for mod in (p_trench, p_wire, p_trees, p_wreck, p_misc, p_minenwerfer):
+    for mod in (p_trench, p_wire, p_trees, p_wreck, p_misc, p_minenwerfer, p_trenchlife):
         sp.update(mod.specs())
     return sp
 

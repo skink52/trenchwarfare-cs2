@@ -1,9 +1,9 @@
 // mg_trenchwarfare.js - Western Front role manager (cs_script, no plugins)
 // AI-generated (Claude) for skink52's mg_trenchwarfare addon.
 //
-// Roles: INFANTRY (fire trench, respawn, bolt rifle + P250 + knife, kill streak -> AWP / auto rifle, dressing stations heal),
+// Roles: INFANTRY (fire trench, respawn, bolt rifle + pistol + knife, 3-kill streak -> Mondragon / Lewis gun, dressing stations heal),
 //        MORTAR (5 crews x 2 per side: plot at the map table, fetch a bomb, load, fire; simulated shells with spread),
-//        AIR (biplanes, not built yet - CONFIG.AIR_ENABLED; lives, then back to the ground).
+//        AIR (5 biplanes per side, arcade flight in third person; pilots drawn every AIR_CHECK s, AIR_LIVES lives, then back to the ground).
 // Bots are always infantry. Everyone spawns in the briefing room and is sent to their post after a short delay.
 //
 // Map entities this script uses (all made by tools/make_map.py):
@@ -11,7 +11,7 @@
 //   mortarpit_<t|ct>_K (info_target)            mortar tube position of crew K (1..5); place your mortar prefab there
 //   mortarcrew_<t|ct>_K_a / _b (point_teleport) crew seats: a = plotting table, b = ammunition box
 //   heal_<t|ct>_N (info_target)                 dressing stations
-//   plane_<t|ct>_N (point_teleport)             biplane spawns (for later)
+//   plane_<t|ct>_N (info_teleport_destination)  biplane air-spawn points; tw_plane_<t|ct>_N (prop_dynamic) the aircraft
 //   tw_hud (custom_hud_layout), tw_boom_fx_N / tw_dirt_fx_N / tw_boom_snd_N / tw_whistle_snd_N / tw_shake_N (effect pools),
 //   tw_launch_snd_<tag>_K / tw_launch_fx_<tag>_K (per mortar pit)
 
@@ -47,20 +47,20 @@ const CONFIG = {
   POOL: 12,
   AMBIENT_MIN: 4, AMBIENT_MAX: 13, AMBIENT_CLEAR: 550,   // cosmetic no man's land bursts (seconds between, min distance to any player)
   AIR_ENABLED: true, AIR_SLOTS: 5, AIR_LIVES: 2, AIR_CHECK: 30,
-  // arcade flight (mouse aim: the plane turns toward where the pilot looks; W/S throttle, LMB guns, RMB bomb, E bail-out view reset)
+  // arcade flight (mouse aim: the plane turns toward where the pilot looks; W/S throttle, A/D roll, LMB guns, RMB bomb)
   AIR: {
     SPAWN_ALT: 1100, V_STALL: 420, V_MIN: 520, V_CRUISE: 1150, V_MAX: 1650, ACCEL: 0.6, DIVE_GAIN: 520,
-    TURN: 62, TURN_SLOW: 0.45, BANK_MAX: 65, ROLL_SIGN: -1, MODEL_YAW: 180,     // models' noses point at -x
+    TURN: 62, TURN_SLOW: 0.45, BANK_MAX: 65, ROLL_SIGN: 1, PITCH_SIGN: -1, MODEL_YAW: 0,     // models' noses point at +x (Source pitch: positive = nose down)
     ROLL_RATE: 160, ROLL_MAX: 85, BANK_YAW: 55, BANK_BOOST: 0.9,              // A/D roll; banked into the turn = faster turn
     GUN_AMMO: 500, GUN_RELOAD: 6, SMOKE_HP: 45,
-    COCKPIT: { back: 26, up: 74 }, VIEW_DEFAULT: "chase",                     // "cockpit" also supported (camera at the pilot's head)
+    COCKPIT: { back: -40, up: 84 }, VIEW_DEFAULT: "chase",                     // "cockpit" also supported (camera at the pilot's head)
     BOX_X: 6500, BOX_Y: 5500, ALT_MAX: 5000, ALT_MIN: 120,
     GUN_INTERVAL: 0.09, GUN_DAMAGE: 16, GUN_RANGE: 5200, GUN_SPREAD: 0.014, GUN_FROM: 150,
     BOMBS: 2, BOMB_REARM: 18, BOMB_RADIUS: 420, BOMB_DAMAGE: 240, GRAVITY: 800,
     HIT_SCALE: 0.4, HIT_MIN: 12,                 // rifle bullets on a plane: weapon damage x scale (at least HIT_MIN) to the pilot
     CRASH_CREDIT: 10,                            // seconds a hit keeps kill credit for a crash
     CAM_FOLLOW: { x: 0, y: 0, z: 70 }, CAM_OFFSET: { x: -380, y: 0, z: 70 },
-    PILOT: { back: 26, up: -34 },                // pilot pawn relative to the plane origin: sunk in the fuselage, head at the cockpit rim
+    PILOT: { back: -46, up: 30 },                // (hidden) pilot pawn relative to the plane origin: in the cockpit
   },
   CVARS: ["mp_respawn_on_death_t 1", "mp_respawn_on_death_ct 1", "mp_respawn_immunitytime 0", "mp_freezetime 0",
           "mp_roundtime 60", "mp_buy_anywhere 0", "mp_buytime 0", "mp_death_drop_gun 0", "mp_weapons_allow_map_placed 1",
@@ -359,6 +359,7 @@ function startFlight(p, pawn, dest) {
             view: A.VIEW_DEFAULT, cam: undefined, camParent: undefined };
   try { pawn.DestroyWeapons(); pawn.GiveNamedItem("weapon_knife", false); } catch (e) {}
   try { pawn.SetMoveType(CSMoveType.NONE); } catch (e) {}
+  hidePawn(pawn, true);                                 // the aircraft carries its own pilot figure; hits on the plane go to the pawn
   try { pawn.SetEyeAngles({ pitch: 0, yaw: team === CT ? 180 : 0, roll: 0 }); } catch (e) {}
   placePlane(p, pawn, true);
   setView(p, pawn);
@@ -382,12 +383,17 @@ function endFlight(p, pawn, crashed) {
   if (pawn && live(pawn)) {
     try { const cam = pawn.GetCustomCamera(); if (cam) { cam.SetMode(CustomCameraMode.DISABLED); if (a.camParent) cam.SetParent(a.camParent); } } catch (e) {}
     try { if (pawn.IsAlive()) pawn.SetMoveType(CSMoveType.WALK); } catch (e) {}
+    hidePawn(pawn, false);
   }
+}
+function hidePawn(pawn, hide) {
+  try { pawn.SetModelScale(hide ? 0.02 : 1); } catch (e) {}
+  try { pawn.SetColor({ r: 255, g: 255, b: 255, a: hide ? 0 : 255 }); } catch (e) {}
 }
 function placePlane(p, pawn, snap) {
   const a = p.air, A = CONFIG.AIR, f = a.f;
   const yaw = Math.atan2(f.y, f.x) * 180 / Math.PI, pitch = Math.asin(Math.max(-1, Math.min(1, f.z))) * 180 / Math.PI;
-  const ang = { pitch: pitch, yaw: yaw + A.MODEL_YAW, roll: A.ROLL_SIGN * a.bank };
+  const ang = { pitch: A.PITCH_SIGN * pitch, yaw: yaw + A.MODEL_YAW, roll: A.ROLL_SIGN * a.bank };
   const vel = v3(f.x * a.speed, f.y * a.speed, f.z * a.speed);
   if (snap) a.ac.ent.Teleport({ position: a.pos, angles: ang, velocity: vel });
   else a.ac.ent.Move({ position: a.pos, angles: ang, velocity: vel });
@@ -883,6 +889,7 @@ Instance.OnPlayerReset(({ player }) => {
   const pawn = live(player); if (!pawn) return;
   const s = slotOfPawn(pawn); if (s < 0) return;
   const p = P(s);
+  hidePawn(pawn, false);
   p.deployed = false; p.inSight = false; p.carrying = false;
   p.deployAt = now() + (p.first ? CONFIG.LOBBY_FIRST : CONFIG.LOBBY_RESPAWN);
   const team = pawn.GetTeamNumber();

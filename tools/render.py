@@ -38,6 +38,13 @@ def render(meshes, eye, target, W=900, H=650, fov=40, sun=(-0.4, -0.6, 0.7), bg=
             yy = Y.astype(int); xx = X.astype(int)
             closer = ins & (zz < zbuf[yy, xx])
             if not closer.any(): continue
+            if 'alpha' in bk:
+                pcs = np.stack([l0 / z[a], l1 / z[b], l2 / z[c]], -1) * zz[..., None]
+                UVp = pcs @ uv[[a, b, c]]
+                AH, AW = bk['alpha'].shape[:2]
+                av = bk['alpha'][np.floor(UVp[..., 1] * AH).astype(int) % AH, np.floor(UVp[..., 0] * AW).astype(int) % AW]
+                closer &= av >= 0.5
+                if not closer.any(): continue
             zbuf[yy[closer], xx[closer]] = zz[closer]
             fid[yy[closer], xx[closer]] = f; mid[yy[closer], xx[closer]] = mi
             pc = np.stack([l0 / z[a], l1 / z[b], l2 / z[c]], -1) * zz[..., None]

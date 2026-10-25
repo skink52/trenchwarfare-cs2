@@ -72,6 +72,59 @@ def in_battle(x, y):
     return (abs(x) < 4096) & (abs(y) < 4608)
 
 
+# ---------------------------------------------------------------- standing water in the trenches (planned before the terrain so the floor can look wet)
+from scipy import ndimage as _ndi
+POOLS = []                      # (side, mask (bool, CT raster 8u), level, x0, y0) per pool
+WET = {}                        # side -> wetness raster (CT coords, 8u)
+def _plan_pools():
+    R_ = LY.raster()
+    rs = 16.0
+    xs = np.arange(LY.RX0, LY.RX1, rs) + rs / 2; ys = np.arange(LY.RY0, LY.RY1, rs) + rs / 2
+    X, Y = np.meshgrid(xs, ys, indexing='ij')
+    d, _ = R_.sample(X, Y)
+    inside = d < -1.0
+    prng = np.random.RandomState(77)
+    for s_ in (-1, 1):
+        fl = LY.ground_low(s_ * X, Y) - LY.DEPTH
+        wet = np.zeros(X.shape)
+        segs = [sg for sg in LY.segments() if sg[2] in ('fire', 'support', 'comm')]
+        made = 0; tries = 0
+        while made < 11 and tries < 200:
+            tries += 1
+            a_, b_, kind = segs[prng.randint(len(segs))]
+            t = prng.rand()
+            cx, cy = a_[0] + (b_[0] - a_[0]) * t, a_[1] + (b_[1] - a_[1]) * t
+            i, j = int((cx - LY.RX0) / rs), int((cy - LY.RY0) / rs)
+            if not inside[i, j]: continue
+            lvl = fl[i, j] + prng.uniform(1.6, 3.6)
+            for _ in range(12):
+                lab, _n = _ndi.label(inside & (fl < lvl))
+                reg = lab == lab[i, j]
+                ii, jj = np.nonzero(reg)
+                span = max(ii.max() - ii.min(), jj.max() - jj.min()) * rs
+                if span < 900: break
+                lvl -= 0.4
+            if lab[i, j] == 0 or reg.sum() < 12: continue
+            POOLS.append((s_, reg, lvl))
+            near = _ndi.binary_dilation(reg, iterations=2)
+            wet = np.maximum(wet, near * np.clip((lvl + 3.0 - fl) / 3.0, 0, 1))
+            made += 1
+        WET[s_] = (wet, xs[0], ys[0], rs)
+_plan_pools()
+
+
+def wet_at(X, Y):
+    """0..1 wetness of the trench floor around standing water"""
+    out = np.zeros(np.shape(X))
+    for s_, (wet, x0, y0, rs) in WET.items():
+        cx = s_ * np.asarray(X, float)
+        fi = (cx - x0) / rs; fj = (np.asarray(Y, float) - y0) / rs
+        ok = (fi >= 0) & (fi < wet.shape[0] - 1) & (fj >= 0) & (fj < wet.shape[1] - 1)
+        v = _ndi.map_coordinates(wet, [np.clip(fi, 0, wet.shape[0] - 1), np.clip(fj, 0, wet.shape[1] - 1)], order=1)
+        out = np.maximum(out, np.where(ok, v, 0))
+    return out
+
+
 def terrain_paint(X, Y, Z, D=None):
     """per-vertex blend weight (x channel) and tint; battle zone: 0 mud -> 1 grass, forest: 0 grass -> 1 dirt"""
     X = np.asarray(X, float); Y = np.asarray(Y, float)
@@ -96,6 +149,9 @@ def terrain_paint(X, Y, Z, D=None):
     w = np.where(in_battle(X, Y), g, f)
     t = np.clip(0.86 + 0.12 * n1 + 0.06 * n2, 0.7, 1.0)
     t = np.where(in_battle(X, Y) & (w < 0.3), t * 0.94, t)
+    wt = wet_at(X, Y)
+    t = t * (1 - 0.32 * wt)                      # dark, wet mud around standing water
+    w = np.where(wt > 0.05, w * (1 - wt), w)
     paint = np.stack([w, np.zeros_like(w), np.full(w.shape, 0.35), np.zeros_like(w)], -1)
     tint = np.stack([t, t, t, np.ones_like(t)], -1)
     return paint, tint
@@ -205,8 +261,18 @@ print('parapets: %d quads' % pq)
 
 # ---------------------------------------------------------------- prop helper
 props_placed = {}
-def prop(name, x, y, z, yaw=0.0, pitch=0.0, roll=0.0, scale=(1, 1, 1), stock=None, solid='6', shadows='0', **kw):
+import placer
+PL = placer.Placer()
+skipped = {}
+def prop(name, x, y, z, yaw=0.0, pitch=0.0, roll=0.0, scale=(1, 1, 1), stock=None, solid='6', shadows='0', reg=True, check=False, pad=0.0, **kw):
+    """reg: record the footprint; check: only place if it touches nothing already recorded (returns None when skipped)"""
     model = stock or 'models/tw/%s/%s.vmdl' % (name, name)
+    if reg or check:
+        f = PL.footprint(model, x, y, z, yaw, scale, pad)
+        if check and PL.hits(f):
+            skipped[model] = skipped.get(model, 0) + 1
+            return None
+        if reg: PL.add(f)
     e = ent('prop_static', (x, y, z), (pitch, yaw, roll), group=GROUP, model=model, rendercolor='255 255 255', skin='default',
             solid=solid, bakelighting='1', disableshadows=shadows, lodlevel='-1', baketoworld='0', rendertocubemaps='1', **kw)
     if tuple(scale) != (1, 1, 1): setscale(e, scale)
@@ -248,7 +314,7 @@ for s in (-1, 1):
         mid = ((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2)
         kin = kind_at(mid[0] + n[0] * 10, mid[1] + n[1] * 10) or 'fire'
         front = n[0] > 0.5            # CT: trench lies at +x of the wall -> earth toward no man's land
-        g = float(LY.ground_low(np.array([mid[0]]), np.array([mid[1]]))[0])
+        g = float(LY.ground_low(np.array([s * mid[0]]), np.array([mid[1]]))[0])
         floor = g - LY.DEPTH
         top = g + (6 if front else 18)
         base = top - 96
@@ -263,11 +329,11 @@ for s in (-1, 1):
             px, py = p0[0] + dx * t, p0[1] + dy * t
             name = REVETS[rng.randint(len(REVETS))] + ('_128' if unit > 64 else '')
             if kin == 'niche': continue          # the shelter mound lines the niche
-            prop(name, s * px, py, base, yaw, scale=(sc * (1.0 + 0.01 * rng.rand()), 1, 1), shadows='0')
-            if kin in ('fire', 'step') and (front or rng.rand() < 0.85):
+            prop(name, s * px, py, base, yaw, scale=(sc * (1.0 + 0.01 * rng.rand()), 1, 1), shadows='0', reg=False)
+            if kin in ('fire', 'step') and L >= 40 and (front or rng.rand() < 0.85):     # no sandbag scraps on corner stubs
                 if unit > 64: sb = 'sandbag_low_128' if front else 'sandbag_wall_128'
                 else: sb = 'sandbag_low' if front else ['sandbag_wall_a', 'sandbag_wall_b', 'sandbag_wall_c'][rng.randint(3)]
-                prop(sb, s * px - nx * 1.0, py - ny * 1.0, top + 0.5 - (1.5 if front else 0), yaw + rng.uniform(-1.5, 1.5), scale=(sc, 1, 1))
+                prop(sb, s * px - nx * 1.0, py - ny * 1.0, top + 0.5 - (1.5 if front else 0), yaw + rng.uniform(-1.5, 1.5), scale=(sc, 1, 1), reg=False)
         # player clip: a 4-unit slab behind the wall face, from fire-step height up
         cx0, cy0, cx1, cy1 = sorted((p0[0], p1[0])) + sorted((p0[1], p1[1]))
         cx0, cx1 = sorted((p0[0], p1[0])); cy0, cy1 = sorted((p0[1], p1[1]))
@@ -283,7 +349,7 @@ for s in (-1, 1):
     # fire-steps
     for (xw, ya, yb) in LY.firesteps():
         L = yb - ya; cnt = max(1, int(round(L / 64.0))); sc = L / (cnt * 64.0)
-        g = float(LY.ground_low(np.array([xw]), np.array([(ya + yb) / 2]))[0])
+        g = float(LY.ground_low(np.array([s * xw]), np.array([(ya + yb) / 2]))[0])
         for k in range(cnt):
             y = ya + (k + 0.5) * L / cnt
             prop('firestep', s * xw, y, g - LY.DEPTH, yaw_for(1 * s, 0), scale=(sc, 1, 1))
@@ -299,63 +365,140 @@ for s in (-1, 1):
             t = (k + 0.5) * L / cnt
             x, y = a[0] + dx * t, a[1] + dy * t
             if kind == 'niche': continue
-            g = float(LY.ground_low(np.array([x]), np.array([y]))[0])
-            prop('duckboard_128' if unit > 64 else 'duckboard', s * x, y, g - LY.DEPTH - 0.5, yaw + rng.uniform(-2, 2), scale=(L / (cnt * unit), 1, 1))
+            g = float(LY.ground_low(np.array([s * x]), np.array([y]))[0])
+            prop('duckboard_128' if unit > 64 else 'duckboard', s * x, y, g - LY.DEPTH - 0.5, yaw + rng.uniform(-2, 2), scale=(L / (cnt * unit), 1, 1), reg=False)
     # heal shelters (elephant iron) in the niches, with dressing station dressing
     for k, y in enumerate(LY.SHELTER_Y):
         xs_ = LY.XS + LY.HW + 4 + 48          # arch mouth 4 units clear of the support trench
-        g = float(LY.ground_low(np.array([xs_]), np.array([y]))[0])
-        prop('shelter', s * xs_, y, g - LY.DEPTH, 0 if s > 0 else 180)
-        prop('crate_medical', s * (xs_ + 30), y, g - LY.DEPTH, rng.uniform(-3, 3))
-        prop('stretcher', s * (xs_ - 3), y - 25, g - LY.DEPTH + 0.5, rng.uniform(-3, 3))
+        g = float(LY.ground_low(np.array([s * xs_]), np.array([y]))[0])
+        prop('shelter', s * xs_, y, g - LY.DEPTH, 0 if s > 0 else 180, reg=False)
+        prop('crate_medical', s * (xs_ + 30), y, g - LY.DEPTH, rng.uniform(-2, 2))
+        prop('stretcher', s * (xs_ - 3), y - 30, g - LY.DEPTH + 0.5, rng.uniform(-2, 2))
         # candle on the medical crate and a warm baked light under the arch
         prop(None, s * (xs_ + 30), y + rng.uniform(-6, 6), g - LY.DEPTH + 18.6, rng.uniform(0, 360),
              stock='models/props/de_ancient/ancient_lighting/ancient_lighting_candle_cluster_01_lit.vmdl', solid='0')
         ent('light_omni2', (s * (xs_ + 10), y, g - LY.DEPTH + 34), (90, 0, 0), group=GROUP, brightness_units='1', brightness_lumens='700', brightness='1',
             color='255 176 96', range='260', directlight='3', castshadows='1', colormode='0', enabled='1', bouncescale='1.0', shape='0')
-        prop('sign_dressing_gb' if s > 0 else 'sign_dressing_de', s * (LY.XS + 34), y + 44, g - LY.DEPTH, 90 if s > 0 else 270)
-    # trench signs at the communication trench junctions
+    # trench signs: posts set hard against the revetment, the painted face turned to the walkway
+    def wall_sign(name, x, y, reach=140.0):
+        best = None
+        for (p0, p1, n) in WALLS:
+            L = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
+            if L < 60: continue
+            mx, my = (p0[0] + p1[0]) / 2 + n[0] * 10, (p0[1] + p1[1]) / 2 + n[1] * 10
+            if kind_at(mx, my) in ('niche', None): continue
+            ux, uy = (p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L
+            t = min(max((x - p0[0]) * ux + (y - p0[1]) * uy, 26.0), L - 26.0)
+            wx, wy = p0[0] + ux * t, p0[1] + uy * t
+            d = math.hypot(wx - x, wy - y)
+            if d < reach and (best is None or d < best[0]): best = (d, wx, wy, n)
+        if best is None: return None
+        _, wx, wy, n = best
+        px, py = wx + n[0] * 3.8, wy + n[1] * 3.8
+        yaw = math.degrees(math.atan2(n[1], n[0] * s)) + 90
+        return prop(name, s * px, py, float(LY.ground_low(np.array([s * px]), np.array([py]))[0]) - LY.DEPTH, yaw, check=True)
+    for k, y in enumerate(LY.SHELTER_Y):
+        wall_sign('sign_dressing_gb' if s > 0 else 'sign_dressing_de', LY.XS + 34, y + 60)
     for k, y in enumerate(LY.COMM_Y):
-        g = float(LY.ground_low(np.array([LY.XB]), np.array([y]))[0])
-        prop('sign_mortars_gb' if s > 0 else 'sign_mortars_de', s * (LY.XB + 30), y + 30, g - LY.DEPTH, 180 if s > 0 else 0)
-        prop('sign_firetrench_gb' if s > 0 else 'sign_firetrench_de', s * (LY.XS - 30), y + 100, g - LY.DEPTH, 0 if s > 0 else 180)
-    prop('sign_piccadilly' if s > 0 else 'sign_unter_den_linden', s * (LY.XS - 30), -60, float(LY.ground_low(np.array([LY.XS]), np.array([0.0]))[0]) - LY.DEPTH, 0 if s > 0 else 180)
-    # clutter in the trenches
+        wall_sign('sign_mortars_gb' if s > 0 else 'sign_mortars_de', LY.XB + 30, y + 40)
+        wall_sign('sign_firetrench_gb' if s > 0 else 'sign_firetrench_de', LY.XS - 30, y + 100)
+    wall_sign('sign_piccadilly' if s > 0 else 'sign_unter_den_linden', LY.XS - 30, -60)
+    # ---- trench dressing: everything stands against a wall, leaves a clear walkway, touches nothing else
+    def floor(x, y):
+        return float(LY.ground_low(np.array([x]), np.array([y]))[0]) - LY.DEPTH
+    def at_wall(model, cx, cy, ux, uy, nx_, ny_, t, side, inset=5.0, yaw_off=0.0, lean=None, dz=0.0, z=None, pad=1.5):
+        """place model with its long axis along the trench (u), its back `inset` off the wall on `side`"""
+        lo, hi = placer.bounds(model)
+        long_x = (hi[0] - lo[0]) >= (hi[1] - lo[1])
+        depth = (hi[1] - lo[1]) if long_x else (hi[0] - lo[0])
+        off = LY.HW - inset - depth / 2
+        px, py = cx + ux * t + nx_ * side * off, cy + uy * t + ny_ * side * off
+        yaw = math.degrees(math.atan2(uy, ux * s)) + (0 if long_x else 90) + yaw_off
+        # the back must be near a wall and the front well inside the trench (raster check in CT coords)
+        # back corners: inside, and earth a few units further; front corners: well inside (exact rect test)
+        for e in (-1, 1):
+            ex, ey = ux * e * half_len(model), uy * e * half_len(model)
+            back = (px + ex + nx_ * side * (depth / 2), py + ey + ny_ * side * (depth / 2))
+            wall = (px + ex + nx_ * side * (depth / 2 + inset + 3), py + ey + ny_ * side * (depth / 2 + inset + 3))
+            front = (px + ex - nx_ * side * (depth / 2 + 30), py + ey - ny_ * side * (depth / 2 + 30))
+            if not (in_trench(*back) and not in_trench(*wall) and in_trench(*front)): return None
+        zz = floor(s * px, py) + dz if z is None else z
+        return prop(None, s * px, py, zz, yaw, *(lean or (0, 0)), stock=model, solid='6', check=True, pad=pad)
+    TW = lambda n: 'models/tw/%s/%s.vmdl' % (n, n)
+    RECTS_ = [r_ for r_ in LY.rects()]
+    def in_trench(x, y):
+        return any(x0 <= x <= x1 and y0 <= y <= y1 for (x0, y0, x1, y1, k) in RECTS_)
+    def half_len(model):
+        lo, hi = placer.bounds(model)
+        return max(hi[0] - lo[0], hi[1] - lo[1]) / 2
+    nat = 'gb' if s > 0 else 'de'
+    BAY = [(TW('tl_bucket'), 3), (TW('tl_tins'), 3), (TW('crate_long' if s > 0 else 'crate_german'), 2), (TW('crate_shells'), 1), (TW('tl_bagpile'), 2),
+           (TW('tl_tools'), 2), (TW('tl_bench'), 1), (TW('casings'), 1), (EXT('field_telephone'), 1), (TW('helmet_brodie' if s > 0 else 'helmet_stahl'), 1),
+           (TW('tl_barrel'), 1)]
+    SUP = [(TW('tl_barrel'), 3), (TW('tl_planks'), 2), (TW('tl_wirereel'), 2), (TW('crate_shells'), 2), (TW('crate_long' if s > 0 else 'crate_german'), 2),
+           (TW('tl_bench'), 2), (TW('tl_brazier'), 1), (TW('tl_bagpile'), 2), (TW('tl_bucket'), 2), (EXT('petrol_can'), 1), (TW('tl_tools'), 1)]
+    def pick(lst):
+        w = np.array([q[1] for q in lst], float); return lst[rng.choice(len(lst), p=w / w.sum())][0]
+    # ladders first (over-the-top ladders lean on the parapet, standing on the fire-step), then periscopes on the step
     for i in range(LY.NBAY):
-        y = LY.Y0 + i * LY.P + rng.uniform(40, 220)
-        g = float(LY.ground_low(np.array([LY.XF]), np.array([y]))[0])
-        r = rng.rand()
-        if r < 0.25: prop('crate_long', s * (LY.XF + 18), y, g - LY.DEPTH + 4, rng.uniform(80, 100))
-        elif r < 0.45: prop('helmet_brodie' if s > 0 else 'helmet_stahl', s * (LY.XF + 20), y, g - LY.DEPTH + 4.5, rng.uniform(0, 360))
-        elif r < 0.6: prop('ladder', s * (LY.XF - LY.HW - 26), y + 60, g - LY.DEPTH + 40, 90 if s > 0 else 270, pitch=-14)
-    # more trench life against the rear walls: buckets, water barrels, crates, telephones, cans, shells
-    CLUT = [('stock', 'models/cs_italy/props/bucket/wood_bucket_1.vmdl', 0), ('stock', 'models/cs_italy/props/barrel/italy_barrel_wood_1.vmdl', 0),
-            ('stock', 'models/de_inferno/wood_crate_01/inferno_crate_wood_01.vmdl', 0), ('tw', 'crate_shells', 0), ('tw', 'casings', 0),
-            ('stock', 'models/generic/ammo_artillery_01/ammo_artillery_small_01b.vmdl', 0), ('ext', 'field_telephone', 0), ('ext', 'petrol_can', 0),
-            ('tw', 'helmet_brodie' if s > 0 else 'helmet_stahl', 4.5), ('ext', 'helmet_brodie_ext' if s > 0 else 'helmet_stahl_ext', 0.5)]
-    for i in range(LY.NBAY):
-        for j in range(rng.randint(2, 4)):
-            y = LY.Y0 + i * LY.P + rng.uniform(-20, 270)
-            g = float(LY.ground_low(np.array([LY.XF]), np.array([y]))[0])
-            kind, nm, dz = CLUT[rng.randint(len(CLUT))]
-            x = LY.XF + LY.HW - rng.uniform(10, 14)
-            stock_ = nm if kind == 'stock' else (EXT(nm) if kind == 'ext' else None)
-            prop(None if stock_ else nm, s * x, y, g - LY.DEPTH + 3.5 + dz, rng.uniform(0, 360), stock=stock_, solid='6' if kind == 'stock' else '0')
-    # support trench: a few stores along its rear wall
-    for y in np.arange(LY.Y0 + 200, LY.Y0 + LY.NBAY * LY.P - 200, 520.0):
-        if any(abs(y - sy) < 200 for sy in LY.SHELTER_Y) or any(abs(y - cy - 112) < 220 for cy in LY.COMM_Y): continue
-        xs0 = LY.support_x_at(y)
-        g = float(LY.ground_low(np.array([xs0]), np.array([y]))[0])
-        kind, nm, dz = CLUT[rng.randint(len(CLUT))]
-        stock_ = nm if kind == 'stock' else (EXT(nm) if kind == 'ext' else None)
-        prop(None if stock_ else nm, s * (xs0 + LY.HW - 12), y + rng.uniform(-40, 40), g - LY.DEPTH + 3.5 + dz, rng.uniform(0, 360), stock=stock_, solid='0')
-    # flooded stretches: brown water between the duckboard slats
-    for (x0, y0, x1, y1, kind) in LY.rects():
-        if kind in ('step', 'niche') or rng.rand() > 0.35: continue
-        cx_, cy_ = (x0 + x1) / 2, (y0 + y1) / 2
-        fl = float(LY.ground_low(np.array([cx_]), np.array([cy_]))[0]) - LY.DEPTH
-        bx0, bx1 = sorted((s * (x0 + 2), s * (x1 - 2)))
-        vmesh.mesh_node(vmesh.box_mesh(bx0, y0 + 2, fl - 14, bx1, y1 - 2, fl + 2.2, dict(side=NODRAW, top=WATER)), GROUP, bake=True)
+        ya = LY.Y0 + i * LY.P
+        xw = LY.XF - LY.HW - LY.STEP_D
+        if rng.rand() < 0.45:
+            y = ya + rng.uniform(40, 216)
+            prop('ladder', s * (xw + 27), y, floor(s * LY.XF, y) + 41.2, 0 if s > 0 else 180, pitch=-14, check=True)
+        if rng.rand() < 0.4:
+            y = ya + rng.uniform(30, 226)
+            prop('tl_periscope', s * (xw + 6), y, floor(s * LY.XF, y) + 41.2, 0 if s > 0 else 180, check=True)
+        for _ in range(rng.randint(0, 3)):
+            y = ya + rng.uniform(20, 236)
+            prop(['tl_tins', 'casings', 'helmet_brodie' if s > 0 else 'helmet_stahl'][rng.randint(3)], s * (xw + rng.uniform(10, 22)), y,
+                 floor(s * LY.XF, y) + 41.2, rng.uniform(0, 360), check=True)
+    nb = 0
+    for (a, b, kind) in LY.segments():
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        if kind == 'niche' or L < 150: continue
+        ux, uy = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+        nx_, ny_ = -uy, ux
+        sides = (1, -1)
+        if kind == 'fire':      # never block the fire-step side
+            sides = tuple(sd for sd in (1, -1) if nx_ * sd > 0.5) or (1, -1)
+        lst = BAY if kind == 'fire' else SUP
+        dens = {'fire': 1 / 95.0, 'support': 1 / 120.0, 'comm': 1 / 260.0}[kind]
+        n = int(L * dens * rng.uniform(0.7, 1.3))
+        for _ in range(n):
+            t = rng.uniform(70, L - 70)
+            side = sides[rng.randint(len(sides))]
+            m = pick(lst)
+            lean = None
+            if 'tl_tools' in m: lean = (0, 0)
+            if at_wall(m, a[0], a[1], ux, uy, nx_, ny_, t, side, inset=5.5 if 'tl_tools' not in m else 3.0) is not None: nb += 1
+        # gas-alarm gongs at the ends of long runs
+        if kind in ('fire', 'support') and rng.rand() < 0.35:
+            at_wall(TW('tl_gong'), a[0], a[1], ux, uy, nx_, ny_, rng.uniform(80, L - 80), sides[0], inset=4.0)
+    # lanterns on top of barrels / crates in the support trench
+    for f in list(PL.items):
+        if f['model'] in (TW('tl_barrel'), TW('crate_long'), TW('crate_german'), TW('crate_shells')) and rng.rand() < 0.3 and abs(f['c'][0]) > LY.XS - 120:
+            prop('tl_lantern', f['c'][0] + rng.uniform(-3, 3), f['c'][1] + rng.uniform(-3, 3), f['z'][1], rng.uniform(0, 360), check=True, reg=True)
+    print('trench dressing: %d pieces (side %d)' % (nb, s))
+# standing water: flat sheets at each pool's level over its region (grown a little; the floor hides the shoreline)
+nwp = 0
+for (s_, reg, lvl) in POOLS:
+    wet, x0, y0, rs = WET[s_]
+    grow = _ndi.binary_dilation(reg, iterations=1)
+    ii, jj = np.nonzero(grow)
+    i0, i1, j0, j1 = ii.min(), ii.max() + 1, jj.min(), jj.max() + 1
+    xs_ = x0 - rs / 2 + np.arange(i0, i1 + 1) * rs; ys_ = y0 - rs / 2 + np.arange(j0, j1 + 1) * rs
+    if s_ < 0: xs_ = -xs_[::-1]
+    Xw, Yw = np.meshgrid(xs_, ys_, indexing='ij')
+    valid = grow[i0:i1, j0:j1]
+    if s_ < 0: valid = valid[::-1]
+    valid = fix_pinches(valid)
+    verts, faces, mats = vmesh.grid_sheet(Xw, Yw, np.full(Xw.shape, lvl), lambda i, j: WATER, valid)
+    if faces:
+        vmesh.mesh_node(vmesh.polymesh_open(verts, faces, mats), GROUP, bake=False, shadows=False)
+        nwp += 1
+print('trench water: %d pools' % nwp)
+print('skipped (no room):', {k.split('/')[-1]: v for k, v in sorted(skipped.items(), key=lambda kv: -kv[1])[:12]})
 print('trenches: %d walls per side' % len(WALLS))
 
 # ---------------------------------------------------------------- no man's land
@@ -375,7 +518,7 @@ for s in (-1, 1):
             y += 128
     for k in range(9):
         x = rng.uniform(1050, 1460); y = rng.uniform(-3000, 3000)
-        prop('cheval', s * x, y, gz(s * x, y) - 1, rng.uniform(0, 360), roll=rng.uniform(-6, 6))
+        prop('cheval', s * x, y, gz(s * x, y) - 1, rng.uniform(0, 360), roll=rng.uniform(-6, 6), check=True, pad=4)
 wrecks = [('wreck_tank', -380, 860, 34, 7, -5, -14), ('wreck_tank', 520, -1720, 205, -6, 4, -12),
           ('wreck_fieldgun', -880, -620, 300, 0, 7, -3), ('wreck_fieldgun', 1080, 2360, 140, 3, -9, -4),
           ('wreck_wheel', -840, -700, 20, 0, 0, -2), ('wreck_wheel', 300, 2900, 130, 0, 0, -2)]
@@ -391,7 +534,7 @@ for nm, n, xr in scatter_ext:
         x = rng.choice([-1, 1]) * rng.uniform(*xr); y = rng.uniform(-3300, 3300)
         if not free(x, y, 90): continue
         sc = rng.uniform(0.8, 1.3) if nm == 'stump_burnt' else 1.0
-        prop(None, x, y, gz(x, y) - (6 if nm == 'stump_burnt' else 0.5), rng.uniform(0, 360), rng.uniform(-5, 5), rng.uniform(-5, 5), scale=(sc, sc, sc), stock=EXT(nm))
+        prop(None, x, y, gz(x, y) - (6 if nm == 'stump_burnt' else 0.5), rng.uniform(0, 360), rng.uniform(-5, 5), rng.uniform(-5, 5), scale=(sc, sc, sc), stock=EXT(nm), check=True, pad=3)
 TREES = ['tree_shattered_a', 'tree_shattered_b', 'tree_shattered_c', 'tree_shattered_d']
 placed_pts = []
 def scatter(n, xr, yr, names, min_d=110, mirror=True, zoff=-6, tilt=6, wall_clear=110, scale_r=(0.85, 1.2)):
@@ -403,9 +546,9 @@ def scatter(n, xr, yr, names, min_d=110, mirror=True, zoff=-6, tilt=6, wall_clea
         x *= s
         if not free(x, y, wall_clear): continue
         if any((x - px) ** 2 + (y - py) ** 2 < min_d ** 2 for px, py in placed_pts[-400:]): continue
-        placed_pts.append((x, y))
         sc = rng.uniform(*scale_r)
-        prop(names[rng.randint(len(names))], x, y, gz(x, y) + zoff, rng.uniform(0, 360), rng.uniform(-tilt, tilt), rng.uniform(-tilt, tilt), scale=(sc, sc, sc))
+        if prop(names[rng.randint(len(names))], x, y, gz(x, y) + zoff, rng.uniform(0, 360), rng.uniform(-tilt, tilt), rng.uniform(-tilt, tilt), scale=(sc, sc, sc), check=True, pad=3) is None: continue
+        placed_pts.append((x, y))
         c += 1
 scatter(46, (0, 1500), (-3400, 3400), TREES, min_d=260)
 scatter(70, (1450, 2700), (-3300, 3300), TREES + ['tree_shattered_c'], min_d=200)
@@ -449,7 +592,7 @@ DEB = ['models/de_cache_s2/debris/debris_kit_01a/debris_metal_01%s.vmdl' % c for
 for _ in range(70):
     x = rng.uniform(-1300, 1300); y = rng.uniform(-3300, 3300)
     if not free(x, y, 70): continue
-    prop(None, x, y, gz(x, y) - 1, rng.uniform(0, 360), rng.uniform(-10, 10), rng.uniform(-10, 10), stock=DEB[rng.randint(len(DEB))], solid='0')
+    prop(None, x, y, gz(x, y) - 1, rng.uniform(0, 360), rng.uniform(-10, 10), rng.uniform(-10, 10), stock=DEB[rng.randint(len(DEB))], solid='0', check=True, pad=2)
 
 # ---------------------------------------------------------------- mortar pits
 for s in (-1, 1):
@@ -468,20 +611,33 @@ for s in (-1, 1):
                      scale=(1.0, 1, 1 if lvl < 2 else 1.1))
         st = LY.mortar_stations(s, k)
         tx, ty = st['table']; ax, ay = st['ammo']
-        prop('plotting_table', tx, ty, gz(tx, ty), 90 if s > 0 else 270)
-        prop('ammo_box_mortar', ax, ay, gz(ax, ay), rng.uniform(-20, 20))
-        for j in range(2):
-            x, y = cx + s * rng.uniform(40, 110), cy + rng.uniform(-110, 110)
-            prop(['shell_pile', 'crate_shells', 'casings', 'crate_german' if s < 0 else 'crate_long'][rng.randint(4)], x, y, gz(x, y), rng.uniform(0, 360))
-        prop('casings', cx - s * rng.uniform(55, 75), cy + rng.uniform(-40, 40), gz(cx, cy), rng.uniform(0, 360))
         if s > 0: prop(None, cx, cy, gz(cx, cy), 180, stock='models/tw/ext/mortar_58mm/mortar_58mm.vmdl')     # French 58 mm No.2
         else: prop('minenwerfer', cx, cy, gz(cx, cy) - 0.5, 0)                                                       # German 7.58 cm leMW
-        # pit floor: duckboards to the stations, bombs ready by the tube
-        for (bx, by, byaw) in ((cx + s * 70, cy - 30, 90), (cx + s * 70, cy + 34, 90), (cx - s * 10, cy - 90, 0)):
-            prop('duckboard', bx, by, gz(bx, by) - 0.5, byaw + rng.uniform(-4, 4))
-        for j in range(3):
-            bx, by = cx + s * rng.uniform(-30, 10), cy + (-1) ** j * rng.uniform(48, 70)
-            prop(None, bx, by, gz(bx, by), rng.uniform(0, 360), stock='models/generic/ammo_artillery_01/ammo_artillery_small_0%s.vmdl' % ('1' if j % 2 else '1b'))
+        prop('plotting_table', tx, ty, gz(tx, ty), 90 if s > 0 else 270)
+        prop('ammo_box_mortar', ax, ay, gz(ax, ay), (90 if s > 0 else 270) + rng.uniform(-8, 8))
+        # keep the crew's seats and the walks between table, ammo box and tube clear
+        sa = (tx + s * 38, ty); sb = (ax + s * 44, ay)
+        for (p0, p1) in ((sa, (cx, cy)), (sb, (cx, cy)), (sa, sb)):
+            mx, my = (p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2; Lr = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
+            PL.add(dict(c=(mx, my), h=(Lr / 2, 22), a=math.atan2(p1[1] - p0[1], p1[0] - p0[0]), z=(gz(mx, my), gz(mx, my) + 72), model='reserve'))
+        for p_ in (sa, sb):
+            PL.add(dict(c=p_, h=(22, 22), a=0.0, z=(gz(*p_), gz(*p_) + 72), model='reserve'))
+        # duckboard walk from the ammo box round to the table (under the reserved path, recorded after it)
+        for (bx, by, byaw, scl) in ((cx + s * 112, cy - 8, 90, 1.25),):
+            prop('duckboard', bx, by, gz(bx, by) - 0.5, byaw + rng.uniform(-3, 3), scale=(scl, 1, 1), reg=False)
+        # bombs and stores along the breastwork, never on a walk
+        placed = 0
+        for j in range(40):
+            if placed >= 6: break
+            a_ = rng.uniform(0, 2 * math.pi); r_ = rng.uniform(140, 168)
+            x, y = cx + math.cos(a_) * r_, cy + math.sin(a_) * r_
+            nm = [None, None, 'crate_shells', 'shell_pile', 'casings', 'crate_german' if s < 0 else 'crate_long', 'tl_bucket', 'tl_tins'][rng.randint(8)]
+            yaw_ = math.degrees(a_) + 90 + rng.uniform(-8, 8)
+            if nm is None:
+                ok = prop(None, x, y, gz(x, y), yaw_, stock='models/generic/ammo_artillery_01/ammo_artillery_small_0%s.vmdl' % ('1' if j % 2 else '1b'), check=True, pad=2)
+            else:
+                ok = prop(nm, x, y, gz(x, y), yaw_, check=True, pad=2)
+            if ok is not None: placed += 1
         # crew enclosure
         h = 230; zb = gz(cx, cy) - 60; zt = zb + 480
         for (x0, y0, x1, y1) in ((cx - h, cy - h, cx + h, cy - h + 4), (cx - h, cy + h - 4, cx + h, cy + h), (cx - h, cy - h, cx - h + 4, cy + h), (cx + h - 4, cy - h, cx + h, cy + h)):
@@ -495,38 +651,39 @@ for s in (-1, 1):
 # ---------------------------------------------------------------- airfields (biplanes later): hangar, signs, spawn markers
 for s in (-1, 1):
     hx = s * LY.HANGAR_X
-    prop('hangar', hx, 0, gz(hx, 0) - 2, 0 if s > 0 else 180)
+    prop('hangar', hx, 0, gz(hx, 0) - 2, 0 if s > 0 else 180, reg=False)
     prop('sign_airfield_gb' if s > 0 else 'sign_airfield_de', s * (LY.HANGAR_X - 520), 420, gz(s * (LY.HANGAR_X - 520), 420), 0 if s > 0 else 180)
     for j in range(4):
         x, y = s * (LY.HANGAR_X + rng.uniform(-300, 300)), rng.choice([-1, 1]) * rng.uniform(380, 460)
-        prop(['crate_long', 'crate_german', 'crate_shells'][rng.randint(3)], x, y, gz(x, y), rng.uniform(0, 360))
+        prop(['crate_long', 'crate_german', 'crate_shells'][rng.randint(3)], x, y, gz(x, y), rng.uniform(0, 360), check=True, pad=3)
     pl = 'plane_spad7' if s > 0 else 'plane_dr1'
     for j, (px, py) in enumerate(((s * (LY.HANGAR_X + 40), -150), (s * (LY.HANGAR_X - 120), 160))):
-        prop(None, px, py, gz(px, py), (180 if s > 0 else 0) + rng.uniform(-6, 6), stock='models/tw/ext/%s/%s.vmdl' % (pl, pl))
+        prop(None, px, py, gz(px, py), (0 if s > 0 else 180) + rng.uniform(-6, 6), stock='models/tw/ext/%s/%s.vmdl' % (pl, pl))
     for j in range(5):
         x, y = s * (LY.HANGAR_X + rng.uniform(-340, 340)), rng.uniform(-280, 280)
-        prop(None, x, y, gz(x, y), rng.uniform(0, 360), stock='models/tw/ext/petrol_can/petrol_can.vmdl')
+        prop(None, x, y, gz(x, y), rng.uniform(0, 360), stock='models/tw/ext/petrol_can/petrol_can.vmdl', check=True, pad=3)
     # airfield stores: fuel drums, pallets, crates, a barrow
     for j in range(7):
         x, y = s * (LY.HANGAR_X + rng.uniform(-300, 300)), rng.choice([-1, 1]) * rng.uniform(420, 520)
-        prop(None, x, y, gz(x, y), rng.uniform(0, 360), stock='models/generic/barrel_kit_01/barrel_0%d_a.vmdl' % (1 + rng.randint(3)), solid='6')
+        prop(None, x, y, gz(x, y), rng.uniform(0, 360), stock='models/generic/barrel_kit_01/barrel_0%d_a.vmdl' % (1 + rng.randint(3)), solid='6', check=True, pad=2)
     for j in range(3):
         x, y = s * (LY.HANGAR_X + rng.uniform(-250, 250)), rng.choice([-1, 1]) * rng.uniform(440, 520)
-        prop(None, x, y, gz(x, y), rng.uniform(0, 360), stock='models/de_inferno/wood_pallet_01/inferno_pallet_wood_01.vmdl', solid='6')
-        prop(None, x + rng.uniform(-8, 8), y + rng.uniform(-8, 8), gz(x, y) + 6, rng.uniform(0, 360), stock='models/generic/crate_wooden_01/crate_wooden_01_%s.vmdl' % 'abc'[j], solid='6')
+        yaw_ = rng.uniform(0, 360)
+        if prop(None, x, y, gz(x, y), yaw_, stock='models/de_inferno/wood_pallet_01/inferno_pallet_wood_01.vmdl', solid='6', check=True, pad=3) is not None:
+            prop(None, x, y, gz(x, y) + 6, yaw_ + rng.uniform(-10, 10), stock='models/generic/crate_wooden_01/crate_wooden_01_%s.vmdl' % 'abc'[j], solid='6')
     x, y = s * (LY.HANGAR_X - 430), 300
-    prop(None, x, y, gz(x, y), rng.uniform(0, 360), stock='models/de_overpass/junk/wheelbarrow01a/wheelbarrow01a.vmdl', solid='6')
+    prop(None, x, y, gz(x, y), rng.uniform(0, 360), stock='models/de_overpass/junk/wheelbarrow01a/wheelbarrow01a.vmdl', solid='6', check=True, pad=3)
     for k, y in enumerate(LY.SHELTER_Y):
         xs_ = LY.XS + LY.HW + 4 + 48
-        prop(None, s * (xs_ - 3), y + 25, float(LY.ground_low(np.array([xs_]), np.array([y]))[0]) - LY.DEPTH + 0.5, rng.uniform(-3, 3), stock=EXT('stretcher_ext'))
-    # flyable aircraft (prop_dynamic, script-flown): parked on the strip, noses (model -x) toward the front
+        prop(None, s * (xs_ - 3), y + 29, float(LY.ground_low(np.array([s * xs_]), np.array([y]))[0]) - LY.DEPTH + 0.5, rng.uniform(-2, 2), stock=EXT('stretcher_ext'), check=True)
+    # flyable aircraft (prop_dynamic, script-flown): parked on the strip, noses (model +x) toward the front
     dyn = '%s_dyn' % pl
     src = os.path.join(OUT, 'models/tw/ext/%s/%s.vmdl' % (pl, pl))
     if os.path.exists(src):
         open(os.path.join(OUT, 'models/tw/ext/%s/%s.vmdl' % (pl, dyn)), 'w', newline='\n').write(
             open(src).read().replace('model_archetype = "static_prop_model"', 'model_archetype = ""'))
     for i, (px, py) in enumerate(LY.plane_spawns(s)):
-        e = ent('prop_dynamic', (px - s * 60, py, gz(px - s * 60, py)), (0, 0 if s > 0 else 180, 0), group=GROUP, targetname='tw_plane_%s_%d' % ('ct' if s > 0 else 't', i + 1),
+        e = ent('prop_dynamic', (px - s * 60, py, gz(px - s * 60, py)), (0, 180 if s > 0 else 0, 0), group=GROUP, targetname='tw_plane_%s_%d' % ('ct' if s > 0 else 't', i + 1),
                 model='models/tw/ext/%s/%s.vmdl' % (pl, dyn), solid='6', rendercolor='255 255 255', skin='default', DefaultAnim='', disableshadows='0',
                 fademindist='-1', fademaxdist='0', StartDisabled='0', HoldAnimation='0', RandomAnimation='0')
         props_placed['models/tw/ext/%s/%s.vmdl' % (pl, dyn)] = 1
@@ -582,11 +739,11 @@ for gx in np.arange(-LY.MAP_X + 100, LY.MAP_X - 100, grid):
         nt += 1
         if dp < 1600 and rng.rand() < 0.45:
             bx, by = x + rng.uniform(-110, 110), y + rng.uniform(-110, 110)
-            prop(None, bx, by, gz(bx, by) - 2, rng.uniform(0, 360), stock=BUSH[rng.randint(len(BUSH))], solid='0')
+            prop(None, bx, by, gz(bx, by) - 2, rng.uniform(0, 360), stock=BUSH[rng.randint(len(BUSH))], solid='0', check=True)
         if dp < 700 and rng.rand() < 0.6:
             for _ in range(1):
                 wx, wy = x + rng.uniform(-115, 115), y + rng.uniform(-115, 115)
-                prop(None, wx, wy, gz(wx, wy) - 1, rng.uniform(0, 360), stock=WEED[rng.randint(len(WEED))], solid='0')
+                prop(None, wx, wy, gz(wx, wy) - 1, rng.uniform(0, 360), stock=WEED[rng.randint(len(WEED))], solid="0", check=True)
 # the battle zone's edge: a few surviving trees and lots of weeds between the mortar line and the trenches
 for _ in range(160):
     x = rng.choice([-1, 1]) * rng.uniform(2650, 3550); y = rng.uniform(-3400, 3400)
@@ -594,11 +751,11 @@ for _ in range(160):
     if rng.rand() < 0.3:
         prop(None, x, y, gz(x, y) - 4, rng.uniform(0, 360), stock=FULL[rng.choice([2, 3, 4, 5])], shadows='0')
     else:
-        prop(None, x, y, gz(x, y) - 1, rng.uniform(0, 360), stock=WEED[rng.randint(len(WEED))], solid='0')
+        prop(None, x, y, gz(x, y) - 1, rng.uniform(0, 360), stock=WEED[rng.randint(len(WEED))], solid="0", check=True)
 for _ in range(160):
     x = rng.choice([-1, 1]) * rng.uniform(1500, 3600); y = rng.uniform(-3500, 3500)
     if not free(x, y, 70): continue
-    prop(None, x, y, gz(x, y) - 1, rng.uniform(0, 360), stock=WEED[rng.choice([0, 1, 2])], solid='0')
+    prop(None, x, y, gz(x, y) - 1, rng.uniform(0, 360), stock=WEED[rng.choice([0, 1, 2])], solid="0", check=True)
 print('woodland: %d trees' % nt)
 
 # ---------------------------------------------------------------- fog banks drifting over no man's land
@@ -732,14 +889,19 @@ def banner_png():
     dr.rectangle((14, 14, W - 15, H - 15), outline=(170, 150, 110), width=6)
     t = 'THE WESTERN FRONT'
     bb = dr.textbbox((0, 0), t, font=f1); dr.text(((W - bb[2]) / 2, 30), t, fill=(224, 210, 176), font=f1)
-    cols = [('INFANTRY', ['Bolt-action rifle, P250, knife.', 'Hold the fire trench - you respawn.', 'Kill streaks earn an AWP or auto-rifle.', 'Dressing stations heal you.']),
-            ('TRENCH MORTARS', ['5 crews of 2 per side, behind the lines.', 'Plot the target at the map table,', 'fetch a bomb from the ammo box,', 'load and fire the mortar.']),
-            ('AIRCRAFT', ['Coming soon: biplanes.', 'Earned by kills and chance.', 'Limited lives, then back', 'to the ground war.'])]
+    cols = [('INFANTRY', ['Gewehr 98 / Lee-Enfield, pistol, knife.', 'Hold the fire trench - you respawn.', '3 kills in a row: Mondragon / Lewis gun', '(SHIFT+E or !swap: back to the rifle).',
+                          'Dressing stations heal you.']),
+            ('TRENCH MORTARS', ['5 crews of 2 per side, behind the lines.', 'Map table [E]: WASD plot, MOUSE1 lock,', 'SPACE fire. Ammo box [E]: take a bomb,',
+                                'mortar [E]: load, then [E] FIRE.', 'Shells fly long - correct your aim.']),
+            ('AIRCRAFT', ['Pilots are picked every 30 s (!air).', 'Mouse steers, W/S throttle, A/D roll,', 'MOUSE1 guns, MOUSE2 bomb.', 'Rifle fire hits the pilot.',
+                          '2 lives, then back to the ground.'])]
     cw = (W - 120) / 3
     for i, (h, lines) in enumerate(cols):
         x = 60 + i * cw
-        dr.text((x, 150), h, fill=(214, 178, 96), font=f2)
-        for j, l in enumerate(lines): dr.text((x, 200 + j * 38), l, fill=(214, 206, 188), font=f3)
+        dr.text((x, 140), h, fill=(214, 178, 96), font=f2)
+        for j, l in enumerate(lines): dr.text((x, 186 + j * 36), l, fill=(214, 206, 188), font=f3)
+    t2 = 'Chat: !infantry  !mortar  !air  !swap  !roles'
+    bb = dr.textbbox((0, 0), t2, font=f3); dr.text(((W - bb[2]) / 2, H - 112), t2, fill=(170, 160, 136), font=f3)
     t = 'Wait here - your orders arrive in a moment.'
     bb = dr.textbbox((0, 0), t, font=f2); dr.text(((W - bb[2]) / 2, H - 70), t, fill=(190, 182, 160), font=f2)
     arr = np.asarray(im, np.float32)
@@ -780,6 +942,13 @@ if 'map_subasset_reference_types' in pre:
     pre['map_subasset_reference_types'][2] = ['entity'] * len(names)
     pre['map_subasset_reference_names'][2] = names
     pre['map_subasset_reference_counts'][2] = [counts[n] for n in names]
+# interpenetration audit of everything with a recorded footprint
+from collections import Counter as _C
+pairs = PL.audit()
+cnt = _C(tuple(sorted((PL.items[i]['model'].split('/')[-1][:-5], PL.items[j]['model'].split('/')[-1][:-5]))) for i, j in pairs)
+print('overlaps: %d pairs' % len(pairs), cnt.most_common(25))
+json.dump([dict(a=PL.items[i]['model'], b=PL.items[j]['model'], ca=PL.items[i]['c'], cb=PL.items[j]['c']) for i, j in pairs],
+          open(os.path.join(os.path.dirname(__file__), '..', 'out', 'overlaps.json'), 'w'), indent=0)
 d.elements = [root]
 d.save(OUTPATH)
 print('vmap: %d entities (%d prop_static), %d meshes -> %s (%.1f MB)' % (sum(counts.values()), counts.get('prop_static', 0),

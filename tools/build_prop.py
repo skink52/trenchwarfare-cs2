@@ -13,10 +13,14 @@ def build(name, spec, preview=True, cam=None):
     t0 = time.time()
     lods = spec['lods']
     m0 = lods[0]
-    groups = spec.get('atlases') or {'main': dict(size=spec.get('size', 1024))}
-    # split charts by atlas key; charts on stock materials skip the bake
+    groups = dict(spec.get('atlases') or {'main': dict(size=spec.get('size', 1024))})
+    shaders = dict(spec['shaders'])
+    if any(c['mat'] == 'decal' for c in m0.charts):
+        groups['decal'] = dict(size=spec.get('decal_size', 512), alpha=lambda b: b['metal'], metal=False, fill=0.92)
+        shaders['decal'] = decal_shader(spec['decal_imgs'])
+    # split charts by atlas key; charts on stock materials skip the bake (a list value = variants picked per part)
     smap = spec.get('stock', stock.assign(name))
-    chart_atlas = [('~' + smap[c['mat']]) if c['mat'] in smap else c.get('atlas', 'main') for c in m0.charts]
+    chart_atlas = [('~' + _skey(smap[c['mat']], 0)) if c['mat'] in smap else c.get('atlas', 'main') for c in m0.charts]
     rel_dir = 'models/%s/%s' % (ROOT, name)
     mat_rel = 'materials/models/%s/%s' % (ROOT, name)
     os.makedirs(os.path.join(OUT, rel_dir), exist_ok=True)
@@ -27,7 +31,7 @@ def build(name, spec, preview=True, cam=None):
         ids = [i for i, a in enumerate(chart_atlas) if a == key]
         if not ids: continue
         sub = submesh(m0, ids)
-        baked = bake.bake(sub, spec['shaders'], size=g['size'], res=spec.get('res'), ground=spec.get('ground'),
+        baked = bake.bake(sub, shaders, size=g['size'], res=spec.get('res'), ground=spec.get('ground'),
                           fill=g.get('fill', 0.8), normal_strength=spec.get('normal_strength', 1.0))
         # recompute the atlas uv for every LOD with the same packing
         d, rects = bake.pack([m0.charts[i] for i in ids], g['size'], g.get('fill', 0.8))
@@ -41,7 +45,7 @@ def build(name, spec, preview=True, cam=None):
                 uvs[li][sel, 0] = (R[0] + m.T[sel, 0] * R[2]) / g['size']
                 uvs[li][sel, 1] = (R[1] + m.T[sel, 1] * R[3]) / g['size']
         tname = name if key == 'main' else '%s_%s' % (name, key)
-        tex = modelio.write_textures(OUT, mat_rel, tname, baked, metal=spec.get('metal', False) or g.get('metal', False))
+        tex = modelio.write_textures(OUT, mat_rel, tname, baked, metal=g.get('metal', spec.get('metal', False)))
         if g.get('alpha') is not None:
             a = g['alpha'](baked)
             Image.fromarray(modelio.to8(a)).save(os.path.join(OUT, mat_rel, tname + '_trans.png'))
@@ -52,14 +56,16 @@ def build(name, spec, preview=True, cam=None):
         modelio.write_vmat(OUT, vm, tex, comment='mg_trenchwarfare %s (procedural, AI-generated)' % tname, alpha=alpha,
                            backfaces=g.get('backfaces', False))
         vmats[key] = vm
+        if g.get('alpha') is not None:
+            baked = dict(baked, alpha=g['alpha'](baked), metal=np.zeros_like(baked['metal']))
         previews.append((sub, bake.atlas_uv(sub, rects, g['size']), baked))
     # SMDs: one material name per atlas, one per stock material (tiling uv per face corner)
     meshes = []
-    skeys = sorted(set(a[1:] for a in chart_atlas if a.startswith('~')))
+    skeys = sorted({k for c in m0.charts if c['mat'] in smap for k in (smap[c['mat']] if isinstance(smap[c['mat']], (list, tuple)) else [smap[c['mat']]])})
     for li, m in enumerate(lods):
         fuv = uvs[li][m.F]
         groups_ = []
-        fmat = np.array([smap.get(c['mat'], '') for c in m.charts], object)[m.FC] if len(m.FC) else np.zeros(0, object)
+        fmat = np.array([_skey(smap.get(m.charts[c]['mat'], ''), p) for c, p in zip(m.FC, m.FP)], object) if len(m.FC) else np.zeros(0, object)
         for key in vmats:
             ids = [i for i, a in enumerate(chart_atlas) if a == key]
             groups_.append(('%s_%s' % (name, key), np.isin(m.FC, ids) & (fmat == '')))
@@ -94,6 +100,34 @@ def build(name, spec, preview=True, cam=None):
     return info
 
 
+def _skey(v, part):
+    if isinstance(v, (list, tuple)):
+        return v[(int(part) * 2654435761 >> 7) % len(v)]
+    return v
+
+
+def decal_shader(imgs):
+    """decal charts: colour from the image projected over the quad, alpha (worn by noise) returned in the metal channel"""
+    from noise import fbm
+    def sh(ctx):
+        col = np.zeros((ctx.n, 3), np.float32); a = np.zeros(ctx.n, np.float32)
+        for p in np.unique(ctx.part):
+            sel = ctx.part == p
+            part = ctx.parts[p]; img = imgs[ctx.chart_info[ctx.chart[sel][0]]['decal']]
+            d = ctx.P[sel] - part['decal_o']
+            u = d @ part['decal_u'] / part['decal_s'][0]; v = d @ part['decal_v'] / part['decal_s'][1]
+            H, W = img.shape[:2]
+            px = np.clip((u * (W - 1)).astype(int), 0, W - 1); py = np.clip(((1 - v) * (H - 1)).astype(int), 0, H - 1)
+            rgba = img[py, px]
+            n = fbm(ctx.P[sel, 0] * 0.45, ctx.P[sel, 1] * 0.45, ctx.P[sel, 2] * 0.45, 3, seed=91)
+            n2 = fbm(ctx.P[sel, 0] * 2.2, ctx.P[sel, 1] * 2.2, ctx.P[sel, 2] * 2.2, 2, seed=92)
+            wear = np.clip((n + 0.8) / 0.3, 0, 1) * np.clip(0.85 + 0.6 * n2, 0, 1)
+            a[sel] = rgba[:, 3] * wear
+            col[sel] = rgba[:, :3] * (0.82 + 0.18 * np.clip(0.5 + n2, 0, 1))[:, None]
+        return dict(color=col, rough=np.full(ctx.n, 0.72, np.float32), metal=a)
+    return sh
+
+
 def submesh(m, chart_ids):
     import geo
     sel = np.isin(m.FC, chart_ids)
@@ -123,7 +157,13 @@ def stock_preview(m, fsel, fuv, key):
                 os.makedirs(os.path.dirname(p), exist_ok=True)
                 vm = stock.STOCK[key]['vmat']
                 if vm.startswith('materials/models/tw/'):
-                    Image.open(os.path.join(OUT, vm[:-5] + '_color.png')).convert('RGB').resize((512, 512)).save(p)
+                    import re
+                    txt = open(os.path.join(OUT, vm)).read()
+                    tc = re.search(r'TextureColor "([^"]+)"', txt).group(1)
+                    tn = re.search(r'g_vColorTint "\[([\d. ]+)\]"', txt)
+                    im = np.asarray(Image.open(os.path.join(OUT, tc)).convert('RGB').resize((512, 512)), np.float32)
+                    if tn: im = im * np.array([float(v) for v in tn.group(1).split()[:3]])
+                    Image.fromarray(im.clip(0, 255).astype(np.uint8)).save(p)
                 else:
                     r = [x for x in V.refs(V.vpk_read(vm + '_c')) if '_color' in x][0]
                     V.decode_vtex(V.vpk_read(r + '_c'), 1).convert('RGB').save(p)

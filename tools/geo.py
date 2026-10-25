@@ -389,3 +389,17 @@ def resample_loop(poly, step):
     n = max(8, int(s[-1] / step))
     t = np.linspace(0, s[-1], n + 1)[:-1]
     return np.stack([np.interp(t, s, p[:, 0]), np.interp(t, s, p[:, 1])], 1), s[-1]
+
+
+def decal(img_id, origin, u_axis, v_axis, size, lift=0.06, seg=1):
+    """flat quad carrying decal image img_id over origin + [0,size0] u + [0,size1] v, lifted along u x v; baked into the prop's alpha-tested
+    'decal' atlas (see build_prop: spec['decal_imgs'])"""
+    o = np.asarray(origin, float); ua = np.asarray(u_axis, float); va = np.asarray(v_axis, float)
+    n = np.cross(ua, va); n /= np.linalg.norm(n)
+    s = np.linspace(0, 1, seg + 1)
+    P = o + n * lift + s[:, None, None] * ua * size[0] + s[None, :, None] * va * size[1]
+    m = surface(P, 'decal', frame())
+    m.charts[0]['decal'] = img_id; m.charts[0]['atlas'] = 'decal'
+    m.charts[0]['w'] = float(size[0]); m.charts[0]['h'] = float(size[1])
+    m.parts[0]['decal_o'] = o + n * lift; m.parts[0]['decal_u'] = ua; m.parts[0]['decal_v'] = va; m.parts[0]['decal_s'] = np.asarray(size, float)
+    return m

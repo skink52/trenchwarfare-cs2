@@ -10,24 +10,136 @@ import numpy as np
 
 STOCK = {
     'boards': dict(vmat='materials/de_train/hr_train_s2/wood/hrts2_wood_floor_boards_02_wet.vmat', mode='plank', strips=4, tex=(1024, 512), box_S=64.0),
+    'boards_dark': dict(vmat='materials/models/tw/stock/boards_dark.vmat', mode='plank', strips=4, tex=(1024, 512), box_S=64.0),
+    'boards_warm': dict(vmat='materials/models/tw/stock/boards_warm.vmat', mode='plank', strips=4, tex=(1024, 512), box_S=64.0),
+    'boards_v': dict(vmat='materials/de_train/hr_train_s2/wood/hrts2_wood_floor_boards_02_wet.vmat', mode='box', S=17.0, swap=True),
+    'boards_box': dict(vmat='materials/de_train/hr_train_s2/wood/hrts2_wood_floor_boards_02_wet.vmat', mode='box', S=40.0),
     'rust': dict(vmat='materials/de_overpass/metal/rusty_metal_1.vmat', mode='box', S=96.0),
+    'rust_fine': dict(vmat='materials/de_overpass/metal/rusty_metal_1.vmat', mode='box', S=36.0),
     'mud': dict(vmat='materials/de_ancient/hr_ancient_ground_mud_03_wet.vmat', mode='box', S=160.0),
+    'mud_fine': dict(vmat='materials/de_ancient/hr_ancient_ground_mud_03_wet.vmat', mode='box', S=40.0),
     'bark': dict(vmat='materials/models/tw/stock/bark_maple.vmat', mode='cyl', S=72.0),
+    # exported from the game files into materials/models/tw/stock (their own vmats are foliage/blend shaders)
+    'hessian': dict(vmat='materials/models/tw/stock/hessian.vmat', mode='chart', S=28.0),
+    'hessian_b': dict(vmat='materials/models/tw/stock/hessian_b.vmat', mode='chart', S=28.0),
+    'hessian_c': dict(vmat='materials/models/tw/stock/hessian_c.vmat', mode='chart', S=28.0),
+    'paint_white': dict(vmat='materials/models/tw/stock/paint_white.vmat', mode='box', S=40.0),
+    'canvas': dict(vmat='materials/models/tw/stock/canvas.vmat', mode='chart', S=64.0),
+    'canvas_dark': dict(vmat='materials/models/tw/stock/canvas_dark.vmat', mode='chart', S=64.0),
+    'paint_feld': dict(vmat='materials/models/tw/stock/paint_feldgrau.vmat', mode='box', S=56.0),
+    'paint_khaki': dict(vmat='materials/models/tw/stock/paint_khaki.vmat', mode='box', S=56.0),
+    'paint_dark': dict(vmat='materials/models/tw/stock/paint_dark.vmat', mode='box', S=56.0),
+    'paint_khaki_l': dict(vmat='materials/models/tw/stock/paint_khaki.vmat', mode='box', S=130.0),
+    'brass': dict(vmat='materials/models/tw/stock/brass.vmat', mode='box', S=24.0),
+    'steel': dict(vmat='materials/models/tw/stock/steel.vmat', mode='box', S=48.0),
+    'rope': dict(vmat='materials/models/tw/stock/rope.vmat', mode='cyl', S=6.0, swap=True),
+    'rust_heavy': dict(vmat='materials/shared_base/metal/metal_rust_001.vmat', mode='box', S=64.0),
 }
 
+# custom vmats built from the game's textures (their own vmats use foliage/blend/trim shaders or are untinted):
+# name -> colour vtex, normal vtex, paint colour (applied to the unrusted/neutral part of the texture, or as a plain tint), metalness, roughness
+_HULL = 'materials/metal/metalhull003a_color_psd_80d5ae03'
+_MB_N = 'materials/de_mirage/metal/metal_basic_1_normal_tga_f2f13580'
+CUSTOM = {
+    'hessian': dict(c='materials/pbr_defaults/default_cloth001_color_psd_e8be67f8', n='materials/pbr_defaults/default_cloth001_normal_psd_a04b35dd', tint=(0.80, 0.72, 0.58), rough=0.97),
+    'hessian_b': dict(c='materials/pbr_defaults/default_cloth001_color_psd_e8be67f8', n='materials/pbr_defaults/default_cloth001_normal_psd_a04b35dd', tint=(0.66, 0.60, 0.50), rough=0.98),
+    'hessian_c': dict(c='materials/pbr_defaults/default_cloth001_color_psd_e8be67f8', n='materials/pbr_defaults/default_cloth001_normal_psd_a04b35dd', tint=(0.54, 0.50, 0.43), rough=0.98),
+    'boards_dark': dict(c='materials/de_train/hr_train_s2/wood/hrts2_wood_floor_boards_02_color_psd_54447bbd', n='materials/de_train/hr_train_s2/wood/hrts2_wood_floor_boards_02_normal_psd_651e3e65', tint=(0.60, 0.58, 0.54), rough=0.72),
+    'boards_warm': dict(c='materials/de_train/hr_train_s2/wood/hrts2_wood_floor_boards_02_color_psd_54447bbd', n='materials/de_train/hr_train_s2/wood/hrts2_wood_floor_boards_02_normal_psd_651e3e65', tint=(0.95, 0.84, 0.70), rough=0.8),
+    'paint_white': dict(c=_HULL, n=_MB_N, paint=(0.66, 0.65, 0.60), rough=0.5, chip=True),
+    'canvas': dict(c='materials/pbr_defaults/default_cloth001_color_psd_e8be67f8', n='materials/pbr_defaults/default_cloth001_normal_psd_a04b35dd', tint=(0.78, 0.76, 0.64), rough=0.93),
+    'canvas_dark': dict(c='materials/pbr_defaults/default_cloth001_color_psd_e8be67f8', n='materials/pbr_defaults/default_cloth001_normal_psd_a04b35dd', tint=(0.52, 0.51, 0.43), rough=0.93),
+    'paint_feldgrau': dict(c=_HULL, n=_MB_N, paint=(0.27, 0.29, 0.25), rough=0.62, chip=True),
+    'paint_khaki': dict(c=_HULL, n=_MB_N, paint=(0.31, 0.28, 0.20), rough=0.62, chip=True),
+    'paint_dark': dict(c=_HULL, n=_MB_N, paint=(0.16, 0.17, 0.16), rough=0.55, chip=True),
+    'brass': dict(c='materials/de_mirage/metal/metal_basic_1_color_tga_c231a254', n=_MB_N, tint=(0.80, 0.60, 0.33), metal=1.0, rough=0.38),
+    'steel': dict(c='materials/de_mirage/metal/metal_basic_1_color_tga_c231a254', n=_MB_N, tint=(0.42, 0.42, 0.42), metal=1.0, rough=0.45),
+    'rope': dict(c='materials/de_overpass/construction/rope/rope_braid_1_color_tga_6f3139a7', n='materials/de_overpass/construction/rope/rope_braid_1_normal_tga_5d3a0f88', tint=(0.52, 0.46, 0.37), rough=0.95),
+}
+
+
+def _vtex(key, maxsize):
+    import vtexread as V
+    from PIL import Image
+    im = V.decode_vtex(V.vpk_read(key + '.vtex_c'), 0)
+    if max(im.size) > maxsize:
+        f = maxsize / max(im.size); im = im.resize((max(1, int(im.size[0] * f)), max(1, int(im.size[1] * f))), Image.LANCZOS)
+    return im
+
+
+def export_custom(outdir, maxsize=1024):
+    """decode the game textures named in CUSTOM and write csgo_complex vmats (+ derived colour/roughness PNGs) into materials/models/tw/stock"""
+    from PIL import Image
+    rel = 'materials/models/tw/stock'
+    d = os.path.join(outdir, rel); os.makedirs(d, exist_ok=True)
+    nrm_done = {}
+    for name, c in CUSTOM.items():
+        col = np.asarray(_vtex(c['c'], maxsize).convert('RGB'), np.float32) / 255.0
+        rough = None
+        if c.get('chip'):
+            # paint over the neutral grey of the hull plate, keep the chipped rust/bare patches as they are
+            sat = col.max(-1) - col.min(-1)
+            rust = np.clip((sat - 0.06) / 0.10, 0, 1) ** 0.8
+            lum = col.mean(-1, keepdims=True)
+            painted = np.array(c['paint']) * (0.7 + 0.3 * lum / max(lum.mean(), 1e-3))
+            col = painted * (1 - rust[..., None]) + col * 0.85 * rust[..., None]
+            rough = c['rough'] + (0.92 - c['rough']) * rust
+        # untouched colour textures are shared between the tinted variants
+        cfile = '%s/%s.png' % (rel, (name + '_color') if c.get('chip') else c['c'].split('/')[-1].split('_tga_')[0].split('_psd_')[0])
+        Image.fromarray((col.clip(0, 1) * 255).astype(np.uint8)).save(os.path.join(outdir, cfile))
+        lines = ['// %s: CS2 game texture (Valve) re-used for mg_trenchwarfare props' % name, '', 'Layer0', '{', '\tshader "csgo_complex.vfx"', '\tF_SPECULAR 1',
+                 '\tTextureColor "%s"' % cfile, '\tg_vColorTint "[%.3f %.3f %.3f 0.000000]"' % tuple(c.get('tint', (1, 1, 1))), '\tg_flMetalness "%.3f"' % c.get('metal', 0.0)]
+        if rough is not None:
+            rfile = '%s/%s_rough.png' % (rel, name)
+            Image.fromarray((rough.clip(0, 1) * 255).astype(np.uint8)).save(os.path.join(outdir, rfile))
+            lines.append('\tTextureRoughness "%s"' % rfile)
+        else:
+            lines.append('\tTextureRoughness "[%.3f %.3f %.3f 0.000000]"' % ((c['rough'],) * 3))
+        if c.get('n'):
+            nfile = '%s/%s.png' % (rel, c['n'].split('/')[-1].split('_tga_')[0].split('_psd_')[0])
+            if nfile not in nrm_done:
+                a = np.asarray(_vtex(c['n'], maxsize).convert('RGBA'), np.float32) / 255.0
+                x, y = a[..., 0] * 2 - 1, a[..., 1] * 2 - 1
+                z = np.sqrt(np.clip(1 - x * x - y * y, 0, 1))
+                Image.fromarray((np.stack([x, y, z], -1) * 127.5 + 127.5).clip(0, 255).astype(np.uint8)).save(os.path.join(outdir, nfile)); nrm_done[nfile] = 1
+            lines.append('\tTextureNormal "%s"' % nfile)
+        lines.append('}')
+        open(os.path.join(d, name + '.vmat'), 'w', newline='\n').write('\n'.join(lines) + '\n')
+    return sorted(CUSTOM)
+
+
 # chart material -> stock key, per prop (prefix match on the prop name)
+HES = ['hessian', 'hessian', 'hessian_b', 'hessian_c']
 ASSIGN = [
-    ('revet_', {'wood': 'boards', 'bark': 'bark', 'earth': 'mud', 'galv': 'rust'}),
-    ('firestep', {'wood': 'boards', 'bark': 'bark'}),
-    ('duckboard', {'wood': 'boards'}),
+    ('revet_', {'wood': ['boards', 'boards', 'boards', 'boards_dark', 'boards_dark', 'boards_warm'], 'bark': 'bark', 'earth': 'mud', 'galv': 'rust'}),
+    ('firestep', {'wood': ['boards', 'boards', 'boards_dark'], 'bark': 'bark'}),
+    ('duckboard', {'wood': ['boards', 'boards_dark', 'boards_dark']}),
     ('ladder', {'wood': 'boards'}),
-    ('shelter', {'wood': 'boards', 'earth': 'mud', 'galv': 'rust'}),
-    ('hangar', {'wood': 'boards'}),
-    ('plotting_table', {'wood': 'boards'}),
-    ('tree_shattered', {'bark': 'bark'}),
-    ('stump_', {'bark': 'bark'}),
-    ('log_fallen', {'bark': 'bark', 'earth': 'mud'}),
-    ('cheval', {'bark': 'bark'}),
+    ('shelter', {'wood': 'boards', 'earth': 'mud', 'galv': 'rust', 'burlap': HES}),
+    ('sandbag', {'burlap': HES}),
+    ('tree_shattered', {'bark': 'bark', 'splinter': 'boards_v'}),
+    ('stump_', {'bark': 'bark', 'splinter': 'boards_v'}),
+    ('log_fallen', {'bark': 'bark', 'earth': 'mud', 'splinter': 'boards_v'}),
+    ('cheval', {'bark': 'bark', 'wire': 'rust_fine', 'iron': 'rust_fine'}),
+    ('wire_', {'wire': 'rust_fine', 'iron': 'rust_fine', 'bark': 'bark'}),
+    ('tl_bagpile', {'burlap': HES}),
+    ('tl_barrel', {'wood': 'boards', 'iron': 'rust_fine', 'tin': 'rust_fine'}),
+    ('tl_bench', {'wood': 'boards'}),
+    ('tl_brazier', {'iron': 'rust_heavy'}),
+    ('tl_bucket', {'wood': 'boards', 'iron': 'rust_fine', 'rope': 'rope'}),
+    ('tl_gong', {'bark': 'bark', 'brass': 'brass', 'wood': 'boards', 'iron': 'rust_fine', 'rope': 'rope'}),
+    ('tl_lantern', {'tin': 'paint_dark'}),
+    ('tl_periscope', {'wood': 'boards', 'tin': 'paint_khaki'}),
+    ('tl_planks', {'wood': 'boards'}),
+    ('tl_tins', {'tin': 'steel'}),
+    ('tl_tools', {'wood': 'boards', 'iron': 'rust_fine'}),
+    ('tl_wirereel', {'wood': 'boards', 'wire': 'rust_fine'}),
+    ('wreck_fieldgun', {'gun': 'paint_feld', 'gunsteel': 'paint_dark', 'wood': 'boards'}),
+    ('wreck_wheel', {'wood': 'boards', 'gunsteel': 'paint_dark'}),
+    ('wreck_tank', {'tank': 'paint_khaki_l', 'track': 'rust_heavy', 'bark': 'bark', 'rust': 'rust', 'gunsteel': 'paint_dark'}),
+    ('minenwerfer', {'gun': 'paint_feld', 'gunsteel': 'paint_dark', 'brass': 'brass', 'wood': 'boards'}),
+    ('hangar', {'wood': 'boards', 'canvas': 'canvas', 'canvas_in': 'canvas_dark'}),
+    ('plotting_table', {'wood': 'boards', 'gunsteel': 'paint_dark'}),
 ]
 
 
@@ -86,14 +198,22 @@ def uv_for(mesh, fsel, key):
             # unwrap per face so no face straddles the seam
             ang = np.where(ang - ang[:, :1] > np.pi, ang - 2 * np.pi, np.where(ang - ang[:, :1] < -np.pi, ang + 2 * np.pi, ang))
             S = cfg['S']
-            out[sel] = np.stack([ang * max(r, 2.0) / S + ou, h / S + ov], -1)
+            uvc = np.stack([ang * max(r, 2.0) / S + ou, h / S + ov], -1)
+            out[sel] = uvc[..., ::-1] if cfg.get('swap') else uvc
+        elif cfg['mode'] == 'chart':
+            # the chart's own unwrap (0..1 over w x h units) at real scale
+            S = cfg['S']
+            fc = mesh.FC[fsel][sel]
+            wh = np.array([[mesh.charts[c]['w'], mesh.charts[c]['h']] for c in fc])
+            T = mesh.T[F[sel]]
+            out[sel] = np.stack([T[..., 0] * wh[:, None, 0] / S + ou, T[..., 1] * wh[:, None, 1] / S + ov], -1)
         else:
             S = cfg.get('S', cfg.get('box_S', 64.0))
             ax = np.abs(N[sel]).argmax(1)
             Q = P[sel]
             uu = np.where(ax[:, None] == 0, Q[..., 1], Q[..., 0])
             vv = np.where(ax[:, None] == 2, Q[..., 1], -Q[..., 2])
-            out[sel] = np.stack([uu / S + ou, vv / S + ov], -1)
+            out[sel] = np.stack([vv / S + ov, uu / S + ou], -1) if cfg.get('swap') else np.stack([uu / S + ou, vv / S + ov], -1)
     return out
 
 
