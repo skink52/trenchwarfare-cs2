@@ -140,6 +140,11 @@ Done this session (since the first delivery):
   prop_dynamic `tw_agent_N` below the lobby. Next: recolour (khaki/feldgrau) + Brodie/Stahlhelm pass on copies of those agents.
   Generated output: out/gen_tw10.vmap.
 
+- tw11 (26 Oct, from the user's 14:22 vmap, prev gen_tw10): vis hints refit (Low: trenches+saps y -3600..3300 z -300, skirmish track,
+  mortar pits, galleries, wood clearing; Lower: no man's land above the galleries; Lowest over all). Lightmap player-space volumes
+  (`toolslightmapres.vmat`): one closed shell on a 64 grid over the walkable band (trench floors to parapet +128, NML, skirmish outline,
+  mortar pits), a box per tunnel rect, the lobby. Generated output: out/gen_tw11.vmap.
+
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
 - Done 03:12: shelter candles + baked warm light, wreck/crater smoke, distant smoke columns, damaged-plane smoke (HP <= 45).

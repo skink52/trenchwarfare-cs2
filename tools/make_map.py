@@ -983,10 +983,15 @@ def hint(box, kind):
     ent('visibility_hint', c, group=GROUP, hintType=str(kind), box_mins='%g %g %g' % (-h[0], -h[1], -h[2]), box_maxs='%g %g %g' % (h[0], h[1], h[2]))
 for s in (-1, 1):
     a, b = sorted((s * 1290, s * 2620))
-    hint((a, -3300, -220, b, 3300, 360), 3)
+    hint((a, -3600, -300, b, 3300, 360), 3)                  # trenches, saps and the landings
+    a, b = sorted((s * 1290, s * 1800))
+    hint((a, 3300, -120, b, 3560, 360), 3)                   # skirmish track
     a, b = sorted((s * 2900, s * 3500))
-    hint((a, -1900, -160, b, 1900, 320), 3)
-hint((-1280, -3700, -180, 1280, 3700, 460), 8)
+    hint((a, -1900, -160, b, 1900, 320), 3)                  # mortar pits
+hint((-1280, -3600, -300, 1280, -3150, -122), 3)              # mine galleries
+hint((-1280, -3150, -300, 1280, 2900, 460), 8)                # no man's land (Lower: big open space)
+hint((-1280, -3600, -121, 1280, -3150, 460), 8)
+hint((-1280, 2900, -160, 1280, 4500, 420), 3)                 # woods skirmish clearing
 hint((-LW / 2 - 64, -LD / 2 - 64, LZ - 64, LW / 2 + 64, LD / 2 + 64, LZ + LH + 64), 3)
 hint((-SX - 64, -SY - 64, LZ - 128, SX + 64, SY + 64, LY.SKY_Z1 + 64), 9)
 ent('cs_minimap_boundary', (-2900, -3500, 0), group=GROUP)
@@ -1293,6 +1298,59 @@ for name, cnt in cover:
             ncover += 2
             break
 print('woods skirmish: exit at x=+-%.0f y=%.0f, %d clip walls, %d fence panels, %d cover props, %d trees/bushes cleared' % (EXIT_X, EXIT_Y, nclip, nfence, ncover, _drop))
+
+# ---------------------------------------------------------------- lightmap player-space volumes (tools/lightmapres): the compiler gives
+# surfaces near these meshes more lightmap texels. Walkable band over the trenches, no man's land, the skirmish wood, mortar pits;
+# the mine galleries and the lobby as boxes.
+LMRES = 'materials/tools/toolslightmapres.vmat'
+vmesh.TEX_SIZE[LMRES] = (64, 64)
+from matplotlib.path import Path as _MPath
+LC = 64.0
+lgx = np.arange(-3456.0, 3456.0 + 1, LC); lgy = np.arange(-3072.0, 4480.0 + 1, LC)
+lnx, lny = len(lgx) - 1, len(lgy) - 1
+LX0, LY0_ = np.meshgrid(lgx[:-1], lgy[:-1], indexing='ij'); LX1, LY1_ = LX0 + LC, LY0_ + LC
+locc = (np.abs(LX0 + LC / 2) < 1600) & (LY0_ + LC / 2 > -2990) & (LY0_ + LC / 2 < 2990)        # no man's land
+for s in (-1, 1):
+    for (x0, y0, x1, y1, k) in LY.rects():
+        a, b = sorted((s * x0, s * x1))
+        locc |= (LX1 > a) & (LX0 < b) & (LY1_ > y0) & (LY0_ < y1)
+    for my in LY.MORTAR_Y:
+        locc |= (LX1 > s * LY.MORTAR_X - 230) & (LX0 < s * LY.MORTAR_X + 230) & (LY1_ > my - 230) & (LY0_ < my + 230)
+_sk = _MPath(np.array(OUTLINE))
+for dx_ in (0.1, 0.5, 0.9):
+    for dy_ in (0.1, 0.5, 0.9):
+        locc |= _sk.contains_points(np.stack([(LX0 + dx_ * LC).ravel(), (LY0_ + dy_ * LC).ravel()], 1)).reshape(locc.shape)
+ci, cj = np.nonzero(locc)
+off = np.arange(0.0, LC + 1, 16.0)
+ox, oy = np.meshgrid(off, off, indexing='ij'); ox = ox.ravel(); oy = oy.ravel()
+PX = (lgx[ci][:, None] + ox[None, :]).ravel(); PY = (lgy[cj][:, None] + oy[None, :]).ravel()
+HZ = LY.height(PX, PY); PZ, PD = LY.parapet(PX, PY)
+TOPZ = np.where((PD >= 2) & (PD <= 116), np.maximum(HZ, PZ), HZ)
+cb = HZ.reshape(len(ci), -1).min(1) - 8.0; ct = TOPZ.reshape(len(ci), -1).max(1) + 128.0
+LB = np.full((lnx + 1, lny + 1), 1e9); LT = np.full((lnx + 1, lny + 1), -1e9)
+for (di, dj) in ((0, 0), (1, 0), (0, 1), (1, 1)):
+    np.minimum.at(LB, (ci + di, cj + dj), cb); np.maximum.at(LT, (ci + di, cj + dj), ct)
+lv = {}; lverts = []; lfaces = []
+def _LV(i, j, top):
+    k = (i, j, top)
+    if k not in lv: lv[k] = len(lverts); lverts.append((lgx[i], lgy[j], LT[i, j] if top else LB[i, j]))
+    return lv[k]
+for i, j in zip(ci, cj):
+    lfaces.append([_LV(i, j, 0), _LV(i + 1, j, 0), _LV(i + 1, j + 1, 0), _LV(i, j + 1, 0)][::-1])
+    lfaces.append([_LV(i, j, 1), _LV(i + 1, j, 1), _LV(i + 1, j + 1, 1), _LV(i, j + 1, 1)])
+    for (a_, b_, ni, nj) in (((i, j), (i + 1, j), i, j - 1), ((i + 1, j), (i + 1, j + 1), i + 1, j),
+                             ((i + 1, j + 1), (i, j + 1), i, j + 1), ((i, j + 1), (i, j), i - 1, j)):
+        if 0 <= ni < lnx and 0 <= nj < lny and locc[ni, nj]: continue
+        lfaces.append([_LV(a_[0], a_[1], 0), _LV(b_[0], b_[1], 0), _LV(b_[0], b_[1], 1), _LV(a_[0], a_[1], 1)])
+vmesh.mesh_node(vmesh.polymesh_open(lverts, lfaces, [LMRES] * len(lfaces)), GROUP, bake=False, shadows=False, visexclude=True)
+nlm = 1
+for (x0, y0, x1, y1, k) in TUN:
+    xs_ = np.linspace(x0, x1, 5); ys_ = np.linspace(y0, y1, 5)
+    fz = min(tun_floor(a, b) for a in xs_ for b in ys_); cz = max(tun_ceil(a, b) for a in xs_ for b in ys_)
+    vmesh.mesh_node(vmesh.box_mesh(x0 + 2, y0 + 2, fz + 2, x1 - 2, y1 - 2, cz - 2, LMRES), GROUP, bake=False, shadows=False, visexclude=True)
+    nlm += 1
+vmesh.mesh_node(vmesh.box_mesh(-LW / 2 + 16, -LD / 2 + 16, LZ + 8, LW / 2 - 16, LD / 2 - 16, LZ + LH - 16, LMRES), GROUP, bake=False, shadows=False, visexclude=True)
+print('lightmap player space: %d cells (%d faces) + %d boxes' % (len(ci), len(lfaces), nlm))
 
 # ---------------------------------------------------------------- swap into the world
 kids = world.attr('children')
