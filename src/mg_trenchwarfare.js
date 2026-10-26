@@ -20,11 +20,6 @@ import { Instance, CSInputs, CSMoveType, CSDamageTypes, CustomCameraMode } from 
 // ------------------------------------------------------------------ settings
 const CONFIG = {
   HUD: "tw_hud",
-  AGENTS: {
-    2: ["tm_jungle_raider/tm_jungle_raider_variantf2", "tm_jungle_raider/tm_jungle_raider_variantf", "tm_jungle_raider/tm_jungle_raider_varianta",
-        "tm_jungle_raider/tm_jungle_raider_variantb", "tm_jungle_raider/tm_jungle_raider_variantc"],
-    3: ["ctm_gendarmerie/ctm_gendarmerie_variantb", "ctm_gendarmerie/ctm_gendarmerie_varianta", "ctm_gendarmerie/ctm_gendarmerie_variantd"],
-  },
   LOBBY_FIRST: 4.0,          // seconds in the briefing room on first spawn
   LOBBY_RESPAWN: 1.5,        // ... and after every respawn
   MORTAR_CHANCE: 0.4,        // chance a new player is put on a mortar crew (if a seat is free)
@@ -53,7 +48,6 @@ const CONFIG = {
   AMBIENT_MIN: 4, AMBIENT_MAX: 13, AMBIENT_CLEAR: 550,   // cosmetic no man's land bursts (seconds between, min distance to any player)
   AIR_ENABLED: true, AIR_SLOTS: 5, AIR_LIVES: 2,
   AIR_CHANCE: 0.12,          // on respawn, chance a ground player is posted to the aerodrome (if a plane is free; + merit, + first flight)
-  SET_AGENTS: true,          // put the WW1-ish agent models on players (CONFIG.AGENTS)
   // arcade flight (mouse aim: the plane turns toward where the pilot looks; W/S throttle, A/D roll, LMB guns, RMB bomb)
   AIR: {
     SPAWN_ALT: 1100, V_STALL: 420, V_MIN: 520, V_CRUISE: 1150, V_MAX: 1650, ACCEL: 0.6, DIVE_GAIN: 520,
@@ -980,8 +974,6 @@ Instance.OnPlayerReset(({ player }) => {
   const team = pawn.GetTeamNumber();
   if (team === T || team === CT) {
     if (p.team !== team) { leaveSeat(p); p.role = null; p.team = team; }
-    const ag = CONFIG.AGENTS[team];
-    if (CONFIG.SET_AGENTS) try { pawn.SetModel("characters/models/" + ag[s % ag.length] + ".vmdl"); } catch (e) {}
     chooseRole(p, pawn, team);
   }
 });
@@ -1044,7 +1036,6 @@ Instance.OnPlayerChat(({ player, text }) => {
   else if (t === "!infantry" || t === "!rifle") { p.pref = "infantry"; roleCard(p, "infantry"); if (p.team === T || p.team === CT) requestRole(p, "infantry"); }
   else if (t === "!air" || t === "!pilot") { p.pref = "air"; roleCard(p, "air"); if (p.team === T || p.team === CT) requestRole(p, "air"); }
   else if (t === "!swap") { const pw = toPawn(player); if (pw && pw.IsAlive()) swapRifle(p, pw); }
-  else if (t === "!agents") { CONFIG.SET_AGENTS = !CONFIG.SET_AGENTS; say("[tw] WW1 player models " + (CONFIG.SET_AGENTS ? "ON" : "OFF") + " (from next respawn)"); }
   else if (t === "!random") { p.pref = ""; toast(p, "Roles will be chosen for you", 3); }
   else if (t === "!roles") {
     const cnt = (team, r) => { let n = 0; for (const q of players.values()) if (q.team === team && q.role === r) n++; return n; };

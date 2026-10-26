@@ -1168,13 +1168,6 @@ for (x, y) in ((0, -3300), (0, -3440)):            # the chamber keeps two shado
     tun_lamp(x, y, tun_ceil(x, y) - 18, 600, '255 180 104', rmax=150.0, shadows=True)
 clone('env_combined_light_probe_volume', (0, -3216, -200), box_mins='-2260 -340 -90', box_maxs='2260 400 120', voxel_size='32.0', targetname='tunnel_probe')
 print('mine tunnels: %d timber sets, %d lamps' % (nsets, nlamp))
-# agent models the script puts on the players: a prop of each below the lobby so the map precaches them
-AGENTS = ['tm_jungle_raider/tm_jungle_raider_variant' + v for v in ('f2', 'f', 'a', 'b', 'c')] + \
-         ['ctm_gendarmerie/ctm_gendarmerie_variant' + v for v in ('b', 'a', 'd')]
-for i, a_ in enumerate(AGENTS):
-    ent('prop_dynamic', (-280 + 80 * i, 0, LZ - 400), (0, 0, 0), group=GROUP, targetname='tw_agent_%d' % i,
-        model='characters/models/%s.vmdl' % a_, solid='0', disableshadows='1', rendercolor='255 255 255', skin='default',
-        DefaultAnim='', fademindist='-1', fademaxdist='0', StartDisabled='0', HoldAnimation='0', RandomAnimation='0')
 
 # ---------------------------------------------------------------- woods skirmish: a ladder out of the north end of each fire trench,
 # a fenced track through the shell-holes and a fenced clearing in the wood where both sides meet (own rng: nothing above shifts)

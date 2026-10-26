@@ -167,6 +167,9 @@ Done this session (since the first delivery):
   point, gun-sight pip 1600 ahead (or at the first obstacle), bomb-sight ring at the predicted ballistic landing point (visible to all).
   Gun sound: tw.plane_gun = m249_01..03 (pitch 0.96-1.04), 3 point_soundevents per plane (gun, gun2, gun3) round-robin every 2nd round.
 
+- tw16/17: agent models removed entirely (SetModel drew the local body/head in first person; user: disable custom agents altogether),
+  agent precache props removed. Shelter (dressing station) had no hull: now one convex hull over the earth mound.
+
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
 - Done 03:12: shelter candles + baked warm light, wreck/crater smoke, distant smoke columns, damaged-plane smoke (HP <= 45).

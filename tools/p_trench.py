@@ -282,5 +282,6 @@ def specs():
                              hulls=[np.array([[x, y, z] for x in (-4, 4) for y in (s * 31, s * 40) for z in (0, 88)]) for s in (-1, 1)])
     out['shelter'] = dict(lods=[shelter(0, 4), shelter(1, 4)], size=2048, ground=0.0, metal=True,
                           shaders={'wood': S.wood, 'earth': S.earth, 'galv': S.galvanised, 'burlap': S.burlap}, surface='dirt',
-                          hulls=[])
+                          hulls=[np.array([[x, 58 * np.cos(a) * 1.25, max(58 * np.sin(a) * 0.9, -3)] for x in (-48, 58)
+                                           for a in np.linspace(-0.25, np.pi + 0.25, 13)])])      # the earth mound (the arch is too low to stand in)
     return out
