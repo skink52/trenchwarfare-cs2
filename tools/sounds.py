@@ -86,7 +86,7 @@ ev += event('tw.mortar_whistle', 'sounds/tw/mortar_whistle.vsnd', 0.9, 3000)
 ev += event('tw.mortar_impact', ['sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd', 'sounds/weapons/hegrenade/hegrenade_detonate_03.vsnd',
                                  'sounds/weapons/c4/c4_explode1.vsnd'], 1.0, 9000)
 ev += event('tw.plane_engine', 'sounds/tw/plane_engine.vsnd', 1.0, 7000)
-ev += event('tw.plane_gun', ['sounds/weapons/m249/m249_01.vsnd', 'sounds/weapons/negev/negev_01.vsnd'], 0.8, 6000, extra=('\t\tpitch_random_min = 0.8', '\t\tpitch_random_max = 0.9'))
+ev += event('tw.plane_gun', ['sounds/weapons/m249/m249_01.vsnd', 'sounds/weapons/m249/m249_02.vsnd', 'sounds/weapons/m249/m249_03.vsnd'], 1.0, 7000, extra=('\t\tpitch_random_min = 0.96', '\t\tpitch_random_max = 1.04'))
 ev += event('tw.ambient_blast', ['sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd', 'sounds/weapons/hegrenade/hegrenade_detonate_03.vsnd',
                                  'sounds/weapons/c4/c4_explode1.vsnd'], 0.85, 9000)
 # front-line soundscape: wind, distant guns (thunder), crows

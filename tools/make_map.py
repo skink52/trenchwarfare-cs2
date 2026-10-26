@@ -811,9 +811,17 @@ for s in (-1, 1):
         tg = '%s_%d' % ('ct' if s > 0 else 't', i + 1)
         ent('info_particle_system', (px - s * 60, py, gz(px - s * 60, py) + 60), group=GROUP, targetname='tw_plane_smoke_' + tg, parentname='tw_plane_' + tg,
             effect_name='particles/burning_fx/barrel_burning_engine_smoke_dark.vpcf', start_active='0')
-        for kind, snd in (('eng', 'tw.plane_engine'), ('gun', 'tw.plane_gun')):
+        for kind, snd in (('eng', 'tw.plane_engine'), ('gun', 'tw.plane_gun'), ('gun2', 'tw.plane_gun'), ('gun3', 'tw.plane_gun')):
             ent('point_soundevent', (px - s * 60, py, gz(px - s * 60, py) + 60), group=GROUP, targetname='tw_plane_%s_%s' % (kind, tg), soundName=snd,
-                startOnSpawn='0', toLocalPlayer='0', stopOnNew='1' if kind == 'gun' else '0', saveAndRestore='0')
+                startOnSpawn='0', toLocalPlayer='0', stopOnNew='0', saveAndRestore='0')
+        # script-driven effects, parked in the void until used: falling bombs, tracer streaks, bomb-sight ring, gun-sight pip
+        fx_ = [('tw_bomb', 'tw_bomb_%s_%d' % (tg, k + 1)) for k in range(2)] + [('tw_tracer', 'tw_tracer_%s_%d' % (tg, k + 1)) for k in range(6)] + \
+              [('tw_bombsight', 'tw_bombsight_' + tg), ('tw_gunsight', 'tw_gunsight_' + tg)]
+        for m_, nm_ in fx_:
+            ent('prop_dynamic', (px, py, -3600), (0, 0, 0), group=GROUP, targetname=nm_, model='models/tw/fx/%s/%s.vmdl' % (m_, m_), solid='0',
+                rendercolor='255 255 255', skin='default', DefaultAnim='', disableshadows='1', fademindist='-1', fademaxdist='0',
+                StartDisabled='0', HoldAnimation='0', RandomAnimation='0')
+            props_placed['models/tw/fx/%s/%s.vmdl' % (m_, m_)] = 1
     for i, (px, py) in enumerate(LY.plane_spawns(s)):
         ent('info_teleport_destination', (px, py, surf_z(px, py) + 10), (0, 180 if s > 0 else 0, 0), group=GROUP, targetname='plane_%s_%d' % ('ct' if s > 0 else 't', i + 1))
 

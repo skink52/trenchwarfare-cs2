@@ -68,6 +68,7 @@ const CONFIG = {
     CRASH_CREDIT: 10,                            // seconds a hit keeps kill credit for a crash
     CAM_FOLLOW: { x: 0, y: 0, z: 70 }, CAM_OFFSET: { x: -380, y: 0, z: 70 },
     PILOT: { back: -46, up: 30 },                // (hidden) pilot pawn relative to the plane origin: in the cockpit
+    TRACER_EVERY: 3, TRACER_SPEED: 9000, SIGHT_DIST: 1600, GUN_SOUND_EVERY: 2,   // effects: every Nth round a tracer / gun sound; gun-sight pip distance
   },
   CVARS: ["mp_respawn_on_death_t 1", "mp_respawn_on_death_ct 1", "mp_respawn_immunitytime 0", "mp_freezetime 0",
           "mp_roundtime 60", "mp_buy_anywhere 0", "mp_buytime 0", "mp_death_drop_gun 0", "mp_weapons_allow_map_placed 1",
@@ -110,7 +111,14 @@ function loadPoints() {
     points.trench[team] = findList("trench_" + tg + "_", 64).map(e => ({ pos: e.GetAbsOrigin(), ang: e.GetAbsAngles(), used: 0 }));
     points.heal[team] = findList("heal_" + tg + "_", 16).map(e => e.GetAbsOrigin());
     points.plane[team] = findList("plane_" + tg + "_", 16).map(e => ({ pos: e.GetAbsOrigin(), ang: e.GetAbsAngles() }));
-    points.aircraft[team] = findList("tw_plane_" + tg + "_", 16).map(e => ({ ent: e, park: e.GetAbsOrigin(), parkAng: e.GetAbsAngles(), pilot: -1 }));
+    points.aircraft[team] = findList("tw_plane_" + tg + "_", 16).map(e => {
+      const n = e.GetEntityName().slice("tw_plane_".length), park = e.GetAbsOrigin();
+      const ent = (nm) => live(Instance.FindEntityByName(nm));
+      return { ent: e, park, parkAng: e.GetAbsAngles(), pilot: -1, void: v3(park.x, park.y, -3600), ti: 0, si: 0,
+               bombEnts: [1, 2].map(k => ent("tw_bomb_" + n + "_" + k)).filter(x => x),
+               tracerEnts: [1, 2, 3, 4, 5, 6].map(k => ent("tw_tracer_" + n + "_" + k)).filter(x => x),
+               bsight: ent("tw_bombsight_" + n), gsight: ent("tw_gunsight_" + n) };
+    });
     points.pit[team] = []; points.seatA[team] = []; points.seatB[team] = [];
     for (let k = 1; k <= CONFIG.CREWS; k++) {
       const pit = live(Instance.FindEntityByName("mortarpit_" + tg + "_" + k)) || live(Instance.FindEntityByName("mortar_" + tg + "_" + k));
@@ -343,6 +351,42 @@ function vadd(a, b, k) { return v3(a.x + b.x * k, a.y + b.y * k, a.z + b.z * k);
 function vlen(a) { return Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z); }
 function vnorm(a) { const l = vlen(a) || 1; return v3(a.x / l, a.y / l, a.z / l); }
 function vdot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+function angOf(d) { return { pitch: -Math.asin(Math.max(-1, Math.min(1, d.z))) * 180 / Math.PI, yaw: Math.atan2(d.y, d.x) * 180 / Math.PI, roll: 0 }; }
+function park(ac, e) { if (e && live(e)) { try { e.Teleport({ position: ac.void, velocity: v3(0, 0, 0) }); } catch (err) {} } }
+const tracers = [];
+function tickTracers(dt) {
+  for (let i = tracers.length - 1; i >= 0; i--) {
+    const r = tracers[i];
+    const step = Math.min(r.left, CONFIG.AIR.TRACER_SPEED * dt);
+    r.pos = vadd(r.pos, r.dir, step); r.left -= step;
+    if (r.left <= 0 || !live(r.ent)) { park(r.ac, r.ent); tracers.splice(i, 1); continue; }
+    try { r.ent.Teleport({ position: r.pos, angles: angOf(r.dir) }); } catch (e) {}
+  }
+}
+// where a bomb released now would land: ballistic from the plane's velocity, ground looked up twice
+function bombLanding(a) {
+  const g = CONFIG.AIR.GRAVITY, p0 = v3(a.pos.x, a.pos.y, a.pos.z - 20), v = v3(a.f.x * a.speed, a.f.y * a.speed, a.f.z * a.speed);
+  let gz = groundZ(p0.x, p0.y), x = p0.x, y = p0.y;
+  for (let k = 0; k < 2; k++) {
+    const h = p0.z - gz; if (h <= 0) break;
+    const t = (v.z + Math.sqrt(v.z * v.z + 2 * g * h)) / g;
+    x = p0.x + v.x * t; y = p0.y + v.y * t; gz = groundZ(x, y);
+  }
+  return v3(x, y, gz + 3);
+}
+function drawSights(a, pawn) {
+  const A = CONFIG.AIR, ac = a.ac;
+  if (ac.gsight) {
+    const s = v3(a.pos.x + a.f.x * A.GUN_FROM, a.pos.y + a.f.y * A.GUN_FROM, a.pos.z + 40 + a.f.z * A.GUN_FROM);
+    const g = Instance.TraceLine({ start: s, end: vadd(s, a.f, A.SIGHT_DIST), ignoreEntity: planeEnts(), ignorePlayers: true });
+    const d = g && g.didHit ? Math.max(200, g.fraction * A.SIGHT_DIST - 20) : A.SIGHT_DIST;
+    try { ac.gsight.Teleport({ position: vadd(s, a.f, d), angles: angOf(a.f) }); } catch (e) {}
+  }
+  if (ac.bsight) {
+    if (a.bombs > 0) { const l = bombLanding(a); try { ac.bsight.Teleport({ position: l, angles: { pitch: 0, yaw: Math.atan2(a.f.y, a.f.x) * 180 / Math.PI, roll: 0 } }); } catch (e) {} }
+    else park(ac, ac.bsight);
+  }
+}
 function dirOf(ang) {
   const p = ang.pitch * Math.PI / 180, y = ang.yaw * Math.PI / 180;
   return v3(Math.cos(p) * Math.cos(y), Math.cos(p) * Math.sin(y), -Math.sin(p));
@@ -382,7 +426,7 @@ function startFlight(p, pawn, dest) {
   placePlane(p, pawn, true);
   setView(p, pawn);
   const nm = ac.ent.GetEntityName(), tg = nm.slice("tw_plane_".length);
-  for (const k of ["eng", "gun"]) fire("tw_plane_" + k + "_" + tg, "SetSourceEntity", nm);
+  for (const k of ["eng", "gun", "gun2", "gun3"]) fire("tw_plane_" + k + "_" + tg, "SetSourceEntity", nm);
   fire("tw_plane_eng_" + tg, "StartSound", undefined, 0.05);
   return true;
 }
@@ -397,6 +441,7 @@ function endFlight(p, pawn, crashed) {
     a.ac.ent.Teleport({ position: a.ac.park, angles: a.ac.parkAng, velocity: v3(0, 0, 0) });
   }
   a.ac.pilot = -1;
+  park(a.ac, a.ac.gsight); park(a.ac, a.ac.bsight);
   hClass(p, "tw_fly", "show", false);
   if (pawn && live(pawn)) {
     try { const cam = pawn.GetCustomCamera(); if (cam) { cam.SetMode(CustomCameraMode.DISABLED); if (a.camParent) cam.SetParent(a.camParent); } } catch (e) {}
@@ -499,10 +544,18 @@ function tickAir(p, pawn, dt, pressed, held) {
   if ((held & CSInputs.ATTACK) && t >= a.nextGun && a.ammo > 0) {
     a.nextGun = t + A.GUN_INTERVAL;
     if (--a.ammo <= 0) { a.reloadAt = t + A.GUN_RELOAD; toast(p, "Belt empty - re-arming", 2); }
-    if ((a.ammo % 3) === 0) fire("tw_plane_gun_" + a.ac.ent.GetEntityName().slice("tw_plane_".length), "StartSound");
+    if ((a.ammo % A.GUN_SOUND_EVERY) === 0) {
+      const gk = ["gun", "gun2", "gun3"][a.ac.si++ % 3];
+      fire("tw_plane_" + gk + "_" + a.ac.ent.GetEntityName().slice("tw_plane_".length), "StartSound");
+    }
     const s = v3(a.pos.x + a.f.x * A.GUN_FROM, a.pos.y + a.f.y * A.GUN_FROM, a.pos.z + 40 + a.f.z * A.GUN_FROM);
     const dir = vnorm(v3(a.f.x + gauss() * A.GUN_SPREAD, a.f.y + gauss() * A.GUN_SPREAD, a.f.z + gauss() * A.GUN_SPREAD));
     const g = Instance.TraceLine({ start: s, end: vadd(s, dir, A.GUN_RANGE), ignoreEntity: [a.ac.ent, pawn], traceHitboxes: true });
+    if ((a.ammo % A.TRACER_EVERY) === 0 && a.ac.tracerEnts.length) {
+      const te = a.ac.tracerEnts[a.ac.ti++ % a.ac.tracerEnts.length];
+      for (let i = tracers.length - 1; i >= 0; i--) if (tracers[i].ent === te) tracers.splice(i, 1);
+      tracers.push({ ent: te, ac: a.ac, pos: s, dir, left: g && g.didHit ? g.fraction * A.GUN_RANGE : A.GUN_RANGE });
+    }
     if (g && g.didHit && g.hitEntity) {
       const he = g.hitEntity;
       const ac = planeOfEntity(he);
@@ -517,11 +570,13 @@ function tickAir(p, pawn, dt, pressed, held) {
   if (a.bombs < A.BOMBS && t >= a.rearmAt) { a.bombs++; a.rearmAt = t + A.BOMB_REARM; }
   if ((pressed & CSInputs.ATTACK2) && a.bombs > 0) {
     a.bombs--; if (a.rearmAt < t) a.rearmAt = t + A.BOMB_REARM;
-    bombs.push({ pos: v3(a.pos.x, a.pos.y, a.pos.z - 20), vel: v3(a.f.x * a.speed, a.f.y * a.speed, a.f.z * a.speed), team: pawn.GetTeamNumber(), slot: p.slot });
+    const be = a.ac.bombEnts.find(e => !bombs.some(b => b.ent === e));
+    bombs.push({ pos: v3(a.pos.x, a.pos.y, a.pos.z - 20), vel: v3(a.f.x * a.speed, a.f.y * a.speed, a.f.z * a.speed), team: pawn.GetTeamNumber(), slot: p.slot, ent: be, ac: a.ac });
     toast(p, "Bomb away!", 1.5);
   }
   const smoking = pawn.GetHealth() <= CONFIG.AIR.SMOKE_HP;
   if (smoking !== !!a.smoking) { a.smoking = smoking; fire("tw_plane_smoke_" + a.ac.ent.GetEntityName().slice("tw_plane_".length), smoking ? "Start" : "Stop"); }
+  drawSights(a, pawn);
   drawFlight(p, a, gz);
   return prompt;
 }
@@ -609,12 +664,12 @@ function tickBombs(dt) {
     const b = bombs[i];
     b.vel.z -= A.GRAVITY * dt;
     const np = vadd(b.pos, b.vel, dt);
-    const tr = Instance.TraceLine({ start: b.pos, end: np, ignorePlayers: true });
+    const tr = Instance.TraceLine({ start: b.pos, end: np, ignoreEntity: planeEnts(), ignorePlayers: true });
     if (tr && tr.didHit) {
-      bombs.splice(i, 1);
+      bombs.splice(i, 1); if (b.ent) park(b.ac, b.ent);
       impact({ team: b.team, k: -1, firerSlot: b.slot, x: tr.end.x, y: tr.end.y, z: tr.end.z, radius: A.BOMB_RADIUS, damage: A.BOMB_DAMAGE });
-    } else if (np.z < -2000) bombs.splice(i, 1);
-    else b.pos = np;
+    } else if (np.z < -2000) { bombs.splice(i, 1); if (b.ent) park(b.ac, b.ent); }
+    else { b.pos = np; if (b.ent) { try { b.ent.Teleport({ position: np, angles: angOf(vnorm(b.vel)) }); } catch (e) {} } }
   }
 }
 
@@ -817,6 +872,7 @@ function think() {
   if (!points) loadPoints();
   tickShells();
   tickBombs(dt);
+  tickTracers(dt);
   tickAmbient();
   for (let s = 0; s < 64; s++) {
     const ctl = Instance.GetPlayerController(s);
@@ -906,7 +962,7 @@ Instance.OnActivate(() => {
   Instance.SetNextThink(now());
 });
 Instance.OnRoundStart(() => {
-  points = null; shells.length = 0; bombs.length = 0;
+  points = null; shells.length = 0; bombs.length = 0; tracers.length = 0;
   for (const p of players.values()) p.air = undefined;
   for (const team of [T, CT]) for (const c of crews[team]) { c.loaded = false; c.target = null; c.impacts = []; c.cooldown = 0; }
   for (const p of players.values()) { p.deployed = false; p.deployAt = now() + CONFIG.LOBBY_RESPAWN; p.inSight = false; p.carrying = false; }

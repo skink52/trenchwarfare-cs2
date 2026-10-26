@@ -161,6 +161,12 @@ Done this session (since the first delivery):
   change draws the local third-person body/weapon). hidePawn now only scales, and only un-hides a pawn it hid. testing weapons.vdata
   needs no edits for this addon (same model paths; loadout classes match the map script).
 
+- tw15: aircraft effects. `tools/fx_models.py <addon>` builds models/tw/fx: tw_bomb (lit), tw_tracer / tw_bombsight / tw_gunsight
+  (self-illum, csgo_vertexlitgeneric F_SELF_ILLUM). Per plane prop_dynamics parked at z -3600: tw_bomb_<tg>_1..2, tw_tracer_<tg>_1..6,
+  tw_bombsight_<tg>, tw_gunsight_<tg>. Script: bombs ride their entity, every 3rd round a tracer streak flies at 9000 u/s to the hit
+  point, gun-sight pip 1600 ahead (or at the first obstacle), bomb-sight ring at the predicted ballistic landing point (visible to all).
+  Gun sound: tw.plane_gun = m249_01..03 (pitch 0.96-1.04), 3 point_soundevents per plane (gun, gun2, gun3) round-robin every 2nd round.
+
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
 - Done 03:12: shelter candles + baked warm light, wreck/crater smoke, distant smoke columns, damaged-plane smoke (HP <= 45).
