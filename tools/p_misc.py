@@ -318,7 +318,8 @@ def specs():
     signs = {'sign_dressing_gb': ['DRESSING', 'STATION'], 'sign_dressing_de': ['VERBAND-', 'PLATZ'], 'sign_mortars_gb': ['TRENCH', 'MORTARS'],
              'sign_mortars_de': ['MINEN-', 'WERFER'], 'sign_firetrench_gb': ['FIRE', 'TRENCH'], 'sign_firetrench_de': ['FEUER-', 'GRABEN'],
              'sign_piccadilly': ['PICCADILLY', 'CIRCUS'], 'sign_unter_den_linden': ['UNTER DEN', 'LINDEN'], 'sign_danger': ['DANGER', 'SNIPERS'],
-             'sign_achtung': ['ACHTUNG!', 'FEIND SIEHT'], 'sign_airfield_gb': ['R.F.C.', 'AERODROME'], 'sign_airfield_de': ['FLIEGER-', 'ABTEILUNG']}
+             'sign_achtung': ['ACHTUNG!', 'FEIND SIEHT'], 'sign_airfield_gb': ['R.F.C.', 'AERODROME'], 'sign_airfield_de': ['FLIEGER-', 'ABTEILUNG'],
+             'sign_wood_gb': ['TO THE', 'WOOD'], 'sign_wood_de': ['ZUM', 'WALD']}
     for k, (name, lines) in enumerate(signs.items()):
         m0, ch = sign(lines, seed=60 + k)
         img = text_img(lines, 512, 160, color=(0.88, 0.86, 0.80) if not name.endswith('_de') and name not in ('sign_unter_den_linden', 'sign_achtung') else (0.10, 0.09, 0.08))

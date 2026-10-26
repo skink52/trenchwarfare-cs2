@@ -2,6 +2,20 @@
 
 Read this first when resuming. Newest state at the top.
 
+## State 2026-10-26 ~11:40 ACDT (tw6_content_01.zip + tw6_map_main.zip; unpack_mg_trenchwarfare.bat applies tw2..tw9 in order)
+
+- Regenerate from the user's Hammer-edited map: `make_map.py <user vmap> <out> <addon> <previous generated vmap>` (here
+  out/gen_tw4.vmap; the generated output of each delivery is kept as out/gen_twN.vmap). Generated objects the user moved/added are
+  re-tagged vis group `tw_user` (kept, and registered as placer obstacles); the generated originals they replaced are skipped via
+  out/user_edits.json. Matching tolerates Hammer's float/angle re-save. User edits so far: 12 revetments on the shelter niche walls,
+  a moved field telephone, two widened no man's land puddles; their own explosions/logic_auto/logic_timer are outside tw_gen.
+- Ladders adopted from the user's edit: base on the trench floor at x = +-(xw + 49), sunk 7, pitch -29.
+- Woods skirmish: north wall of the last fire-trench traverse (x +-1716, y 2916) has a gap in the trench clip, no sandbags, a leaning
+  ladder (solid off) and a `toolsinvisibleladder_wood` climb volume, plus TO THE WOOD / ZUM WALD signs. A fenced track (110 wide,
+  player-clip slabs + barbed-wire panels with gaps) runs north-west to a shared clearing in the wood (x +-1210, y 3450-4415) with
+  mirrored cover (logs, stumps, broken trees, sandbag scrapes, stores). Minimap boundary and battle-zone probe extended to y 4500.
+- vmdl hull bug fixed in weather_ext (tw5).
+
 ## State 2026-10-26 ~08:00 ACDT (update 4: tw4_map_main.zip + update4_mg_trenchwarfare.bat, apply after update 3)
 
 - Trench water: pools now never overlap (two sheets z-fought where the old planner picked the same basin twice), are capped at 5 u deep,

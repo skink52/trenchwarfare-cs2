@@ -26,6 +26,62 @@ root = d.root
 world = root.get('world')
 vmaplib.init(d, OUT)
 
+# ---------------------------------------------------------------- Hammer edits to generated objects survive regeneration
+# make_map.py <user vmap> <out> <addon> <previous generated vmap>: generated objects the user moved/edited/added are re-tagged "tw_user"
+# (kept as they are), and the generated originals they replaced are skipped from now on (out/user_edits.json). Ladders follow the
+# generator's rule instead (the user's ladder placement was adopted into it).
+USER_GROUP = 'tw_user'
+EDITS_JSON = os.path.join(os.path.dirname(__file__), '..', 'out', 'user_edits.json')
+
+
+def obj_sig(c):
+    if c.type == 'CMapEntity':
+        ep = c.get('entity_properties')
+        return json.dumps(['E', ep.get('classname') or '', ep.get('model') or '', [round(v, 1) for v in c.get('origin')], [round(v, 1) for v in c.get('angles')]])
+    if c.type == 'CMapMesh':
+        md = c.get('meshData'); o = np.array(c.get('origin') or (0, 0, 0), float)
+        names = [a_[0] for a_ in md.attrs]
+        mats = list(md.get('materials')) if 'materials' in names else []
+        pos = None
+        for st in md.get('vertexData').get('streams'):
+            if st.get('semanticName') == 'position': pos = np.array(st.get('data'), float)
+        bb = [] if pos is None or not len(pos) else np.round(np.concatenate([pos.min(0) + o, pos.max(0) + o]), 0).tolist()
+        return json.dumps(['M', mats, bb, len(pos) if pos is not None else 0])
+    return None
+
+
+SKIP_SIGS = set(json.load(open(EDITS_JSON))) if os.path.exists(EDITS_JSON) else set()
+if len(sys.argv) > 4:
+    prev = [c for c in dmx.DMX.load(sys.argv[4]).root.get('world').get('children') if c.get('customVisGroup', '') == GROUP]
+    mine = [c for c in world.get('children') if c.get('customVisGroup', '') == GROUP]
+    # tolerant matching (Hammer re-saves floats and normalises angles): same class/model, origin within 0.75, angles within 1 degree
+    def _ekey(c):
+        ep = c.get('entity_properties'); return (ep.get('classname') or '', ep.get('model') or '')
+    pool = {}
+    for c in prev:
+        if c.type == 'CMapEntity': pool.setdefault(_ekey(c), []).append(c)
+    msig = {}
+    for c in prev:
+        if c.type == 'CMapMesh': msig.setdefault(obj_sig(c), []).append(c)
+    used = set()
+    def _adiff(a_, b_): return max(abs(((x_ - y_) + 180) % 360 - 180) for x_, y_ in zip(a_, b_))
+    for c in mine:
+        hit = None
+        if c.type == 'CMapEntity':
+            o = np.array(c.get('origin')); an = c.get('angles')
+            for g_ in pool.get(_ekey(c), ()):
+                if id(g_) in used: continue
+                if np.abs(np.array(g_.get('origin')) - o).max() < 0.75 and _adiff(an, g_.get('angles')) < 1.0: hit = g_; break
+        elif c.type == 'CMapMesh':
+            for g_ in msig.get(obj_sig(c), ()):
+                if id(g_) not in used: hit = g_; break
+        if hit is not None: used.add(id(hit)); continue
+        if c.type == 'CMapEntity' and 'ladder' in (c.get('entity_properties').get('model') or ''): continue
+        c.attr('customVisGroup')[2] = USER_GROUP
+    SKIP_SIGS |= {obj_sig(g_) for g_ in prev if id(g_) not in used and not (g_.type == 'CMapEntity' and 'ladder' in (g_.get('entity_properties').get('model') or ''))}
+    json.dump(sorted(SKIP_SIGS), open(EDITS_JSON, 'w'), indent=0)
+    print('user edits: %d kept as %s, %d generated objects replaced' % (sum(1 for c in world.get('children') if c.get('customVisGroup', '') == USER_GROUP), USER_GROUP, len(SKIP_SIGS)))
+
 # ---------------------------------------------------------------- template entities to clone (full key sets)
 TPL = {}
 for c in world.get('children'):
@@ -267,6 +323,9 @@ print('parapets: %d quads' % pq)
 props_placed = {}
 import placer
 PL = placer.Placer()
+for _c in world.get('children'):          # the user's own placements are obstacles for generated dressing
+    if _c.get('customVisGroup', '') == USER_GROUP and _c.type == 'CMapEntity' and (_c.get('entity_properties').get('model') or '').endswith('.vmdl'):
+        _o = _c.get('origin'); PL.add(PL.footprint(_c.get('entity_properties').get('model'), _o[0], _o[1], _o[2], _c.get('angles')[1], tuple(_c.get('scales')), 0.0))
 skipped = {}
 def prop(name, x, y, z, yaw=0.0, pitch=0.0, roll=0.0, scale=(1, 1, 1), stock=None, solid='6', shadows='0', reg=True, check=False, pad=0.0, **kw):
     """reg: record the footprint; check: only place if it touches nothing already recorded (returns None when skipped)"""
@@ -299,6 +358,9 @@ def gz(x, y):
 R = LY.raster()
 WALLS = R.walls()
 RECTS = LY.rects()
+# woods skirmish exit: the north wall of the last fire-trench traverse (CT coords; mirrored for T)
+_last = max((r_ for r_ in RECTS if r_[4] == 'fire'), key=lambda r_: (r_[3], -r_[0]))
+EXIT_Y = float(_last[3]); EXIT_X = float((_last[0] + _last[2]) / 2); EXIT_W = 55.0
 
 def kind_at(x, y):
     """trench kind containing CT-side point"""
@@ -334,7 +396,8 @@ for s in (-1, 1):
             name = REVETS[rng.randint(len(REVETS))] + ('_128' if unit > 64 else '')
             if kin == 'niche': continue          # the shelter mound lines the niche
             prop(name, s * px, py, base, yaw, scale=(sc * (1.0 + 0.01 * rng.rand()), 1, 1), shadows='0', reg=False)
-            if kin in ('fire', 'step') and L >= 40 and (front or rng.rand() < 0.85):     # no sandbag scraps on corner stubs
+            at_exit = abs(n[1]) > 0.5 and abs(p0[1] - EXIT_Y) < 8 and abs(px - EXIT_X) < unit / 2 + EXIT_W
+            if kin in ('fire', 'step') and L >= 40 and (front or rng.rand() < 0.85) and not at_exit:     # no sandbag scraps on corner stubs
                 if unit > 64: sb = 'sandbag_low_128' if front else 'sandbag_wall_128'
                 else: sb = 'sandbag_low' if front else ['sandbag_wall_a', 'sandbag_wall_b', 'sandbag_wall_c'][rng.randint(3)]
                 prop(sb, s * px - nx * 1.0, py - ny * 1.0, top + 0.5 - (1.5 if front else 0), yaw + rng.uniform(-1.5, 1.5), scale=(sc, 1, 1), reg=False)
@@ -347,9 +410,12 @@ for s in (-1, 1):
         else:
             ya = p0[1] - n[1] * 4 if n[1] > 0 else p0[1]; yb = p0[1] if n[1] > 0 else p0[1] - n[1] * 4
             box = (cx0, ya, cx1, yb)
-        bx0, by0, bx1, by1 = box
-        if s < 0: bx0, bx1 = -bx1, -bx0
-        vmesh.mesh_node(vmesh.box_mesh(bx0, by0, floor + 38, bx1, by1, g + 420, PCLIP), GROUP, bake=False, shadows=False, visexclude=True)
+        boxes = [box]
+        if abs(n[1]) > 0.5 and abs(p0[1] - EXIT_Y) < 8 and box[0] < EXIT_X < box[2]:      # gap over the skirmish ladder
+            boxes = [b_ for b_ in ((box[0], box[1], EXIT_X - EXIT_W, box[3]), (EXIT_X + EXIT_W, box[1], box[2], box[3])) if b_[2] - b_[0] > 1]
+        for (bx0, by0, bx1, by1) in boxes:
+            if s < 0: bx0, bx1 = -bx1, -bx0
+            vmesh.mesh_node(vmesh.box_mesh(bx0, by0, floor + 38, bx1, by1, g + 420, PCLIP), GROUP, bake=False, shadows=False, visexclude=True)
     # fire-steps
     for (xw, ya, yb) in LY.firesteps():
         L = yb - ya; cnt = max(1, int(round(L / 64.0))); sc = L / (cnt * 64.0)
@@ -449,7 +515,7 @@ for s in (-1, 1):
         xw = LY.XF - LY.HW - LY.STEP_D
         if rng.rand() < 0.45:
             y = ya + rng.uniform(40, 216)
-            prop('ladder', s * (xw + 27), y, floor(s * LY.XF, y) + 41.2, 0 if s > 0 else 180, pitch=-14, check=True)
+            prop('ladder', s * (xw + 49), y, floor(s * LY.XF, y) - 7.0, 0 if s > 0 else 180, pitch=-29, check=True)
         if rng.rand() < 0.4:
             y = ya + rng.uniform(30, 226)
             prop('tl_periscope', s * (xw + 6), y, floor(s * LY.XF, y) + 41.2, 0 if s > 0 else 180, check=True)
@@ -860,7 +926,7 @@ ent('env_volumetric_fog_controller', (192, 0, 2000), group=GROUP, targetname='tw
     NoiseSpeed='0.15', NoiseStrength='0.55', NoiseScale='.004 .004 .01', volume_depth_override='0', volume_first_slice_thickness='0')
 clone('post_processing_volume', (256, 0, 2000), postprocessing='postprocess/%s.vpost' % NAME, master='1', minexposure='0.6', maxexposure='1.8',
       enableexposure='1', fadetime='1.0', spawnflags='4097')
-clone('env_combined_light_probe_volume', (0, 0, 120), box_mins='-3900 -3700 -260', box_maxs='3900 3700 520', voxel_size='64.0', targetname='bf_probe')
+clone('env_combined_light_probe_volume', (0, 0, 120), box_mins='-3900 -3700 -260', box_maxs='3900 4500 520', voxel_size='64.0', targetname='bf_probe')
 for s in (-1, 1):
     clone('env_combined_light_probe_volume', (s * LY.HANGAR_X, 0, 200), box_mins='-700 -800 -120', box_maxs='700 800 420', voxel_size='64.0',
           targetname='air_probe_%d' % (s + 1))
@@ -887,7 +953,7 @@ hint((-1280, -3700, -180, 1280, 3700, 460), 8)
 hint((-LW / 2 - 64, -LD / 2 - 64, LZ - 64, LW / 2 + 64, LD / 2 + 64, LZ + LH + 64), 3)
 hint((-SX - 64, -SY - 64, LZ - 128, SX + 64, SY + 64, LY.SKY_Z1 + 64), 9)
 ent('cs_minimap_boundary', (-2900, -3500, 0), group=GROUP)
-ent('cs_minimap_boundary', (2900, 3500, 0), group=GROUP)
+ent('cs_minimap_boundary', (2900, 4500, 0), group=GROUP)
 
 # ---------------------------------------------------------------- banner and material files
 def banner_png():
@@ -911,7 +977,7 @@ def banner_png():
         x = 60 + i * cw
         dr.text((x, 140), h, fill=(214, 178, 96), font=f2)
         for j, l in enumerate(lines): dr.text((x, 186 + j * 36), l, fill=(214, 206, 188), font=f3)
-    t2 = 'Chat: !infantry  !mortar  !air  !swap  !roles'
+    t2 = 'Woods skirmish: ladder at the north end of the fire trench.   Chat: !infantry  !mortar  !air  !swap  !roles'
     bb = dr.textbbox((0, 0), t2, font=f3); dr.text(((W - bb[2]) / 2, H - 112), t2, fill=(170, 160, 136), font=f3)
     t = 'Wait here - your orders arrive in a moment.'
     bb = dr.textbbox((0, 0), t, font=f2); dr.text(((W - bb[2]) / 2, H - 70), t, fill=(190, 182, 160), font=f2)
@@ -926,6 +992,157 @@ def banner_png():
         '\tTextureColor "materials/tw/briefing_banner_color.png"\n\tg_vColorTint "[1.000000 1.000000 1.000000 0.000000]"\n}\n')
 banner_png()
 
+# ---------------------------------------------------------------- woods skirmish: a ladder out of the north end of each fire trench,
+# a fenced track through the shell-holes and a fenced clearing in the wood where both sides meet (own rng: nothing above shifts)
+SK = np.random.RandomState(1918)
+LADDER_TOOL = 'materials/tools/toolsinvisibleladder_wood.vmat'
+vmesh.TEX_SIZE[LADDER_TOOL] = (64, 64)
+
+
+def gs(x, y):
+    """walkable surface: the terrain, or the parapet/parados layer where it covers the trench banks"""
+    Z, D_ = LY.parapet(np.array([float(x)]), np.array([float(y)]))
+    h = float(LY.height(np.array([float(x)]), np.array([float(y)]))[0])
+    return max(h, float(Z[0])) if 2 <= D_[0] <= 116 else h
+
+
+def _isect(p, d, q, e):
+    """intersection of lines p + t d and q + u e"""
+    den = d[0] * e[1] - d[1] * e[0]
+    if abs(den) < 1e-9: return q
+    t = ((q[0] - p[0]) * e[1] - (q[1] - p[1]) * e[0]) / den
+    return (p[0] + d[0] * t, p[1] + d[1] * t)
+
+
+def _offset_path(pts, w):
+    """polyline offset by w to the left (mitred corners)"""
+    out = []
+    for i in range(len(pts)):
+        segs = []
+        if i > 0: segs.append((pts[i - 1], pts[i]))
+        if i < len(pts) - 1: segs.append((pts[i], pts[i + 1]))
+        lines = []
+        for a_, b_ in segs:
+            dx, dy = b_[0] - a_[0], b_[1] - a_[1]; L_ = math.hypot(dx, dy); dx, dy = dx / L_, dy / L_
+            lines.append(((a_[0] - dy * w, a_[1] + dx * w), (dx, dy)))
+        if len(lines) == 1:
+            (o, dd) = lines[0]; t_ = 0 if i == 0 else 1
+            base = pts[i]; out.append((base[0] - dd[1] * w, base[1] + dd[0] * w))
+        else:
+            out.append(_isect(lines[0][0], lines[0][1], lines[1][0], lines[1][1]))
+    return out
+
+
+B_ = (1080.0, 3560.0)
+spine = [(EXIT_X, EXIT_Y), (EXIT_X, EXIT_Y + 95.0), B_]                      # CT half; walking out of the trench
+left = _offset_path(spine, EXIT_W)                                            # west / south-west wall
+right = _offset_path(spine, -EXIT_W)                                          # east / north-east wall
+arena_e = [(1185, 3700), (1210, 3950), (1130, 4205), (905, 4350), (455, 4415), (0, 4395)]       # CT half of the clearing's rim
+arena_s = [(850, 3478), (450, 3452), (0, 3472)]
+ct_loop = [right[0], right[1], right[2]] + arena_e                             # trench exit -> north-east wall -> rim to x = 0 (north)
+south_ct = [left[0], left[1], left[2]] + arena_s                               # trench exit -> south-west wall -> south rim to x = 0
+mir = lambda P: [(-p[0], p[1]) for p in P]
+OUTLINE = ct_loop + mir(ct_loop)[::-1][1:] + mir(south_ct) + south_ct[::-1][1:] + [ct_loop[0]]
+
+
+def _jag(P, step=150.0, amp=22.0):
+    """subdivide and wobble the rim so it reads as a hand-built fence line (the trench-exit edges stay straight)"""
+    out = [P[0]]
+    for a_, b_ in zip(P[:-1], P[1:]):
+        L_ = math.hypot(b_[0] - a_[0], b_[1] - a_[1]); n_ = max(1, int(L_ / step))
+        nx_, ny_ = -(b_[1] - a_[1]) / max(L_, 1e-6), (b_[0] - a_[0]) / max(L_, 1e-6)
+        exitish = a_[1] < EXIT_Y + 120 and b_[1] < EXIT_Y + 120
+        for k in range(1, n_ + 1):
+            t_ = k / n_; q = (a_[0] + (b_[0] - a_[0]) * t_, a_[1] + (b_[1] - a_[1]) * t_)
+            if k < n_ and not exitish:
+                j = SK.uniform(-amp, amp); q = (q[0] + nx_ * j, q[1] + ny_ * j)
+            out.append(q)
+    return out
+OUTLINE = _jag(OUTLINE)
+
+
+def inside_skirmish(x, y):
+    c = False
+    for (x1, y1), (x2, y2) in zip(OUTLINE[:-1], OUTLINE[1:]):
+        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1) + x1: c = not c
+    return c
+
+
+def clip_slab(p, q, z0, z1, t=4.0):
+    dx, dy = q[0] - p[0], q[1] - p[1]; L_ = math.hypot(dx, dy)
+    if L_ < 1: return
+    nx_, ny_ = -dy / L_ * t, dx / L_ * t
+    ring = [(p[0] - nx_, p[1] - ny_), (q[0] - nx_, q[1] - ny_), (q[0] + nx_, q[1] + ny_), (p[0] + nx_, p[1] + ny_)]
+    v = [(x_, y_, z0) for x_, y_ in ring] + [(x_, y_, z1) for x_, y_ in ring]
+    faces = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [2, 3, 7, 6], [1, 2, 6, 5], [3, 0, 4, 7]]
+    vmesh.mesh_node(vmesh.polymesh_open(v, faces, [PCLIP] * 6, scale=0.25), GROUP, bake=False, shadows=False, visexclude=True)
+
+
+# clear the track, the clearing's entrances and the foot of each exit ladder of anything generated earlier
+def _near_track(x, y):
+    for sx in (1, -1):
+        for p_, q_ in zip(spine[:-1], spine[1:]):
+            P0 = (sx * p_[0], p_[1]); P1 = (sx * q_[0], q_[1])
+            dx, dy = P1[0] - P0[0], P1[1] - P0[1]; L2 = dx * dx + dy * dy
+            t_ = max(0, min(1, ((x - P0[0]) * dx + (y - P0[1]) * dy) / L2))
+            if math.hypot(x - P0[0] - dx * t_, y - P0[1] - dy * t_) < EXIT_W + 30: return True
+        if math.hypot(x - sx * B_[0], y - B_[1]) < 190: return True
+    return False
+STRUCT = ('revet_', 'firestep', 'duckboard', 'sandbag_', 'shelter')
+_drop = 0
+for c in list(vmaplib.new_children):
+    if c.type != 'CMapEntity' or c.get('entity_properties').get('classname') != 'prop_static': continue
+    m_ = c.get('entity_properties').get('model') or ''
+    o = c.get('origin')
+    at_foot = abs(abs(o[0]) - EXIT_X) < 75 and EXIT_Y - 80 < o[1] < EXIT_Y + 2 and not any(k_ in m_ for k_ in STRUCT)
+    on_track = o[1] > EXIT_Y + 2 and _near_track(o[0], o[1])
+    if at_foot or on_track:
+        vmaplib.new_children.remove(c); _drop += 1
+
+nfence = 0; nclip = 0
+for a_, b_ in zip(OUTLINE[:-1], OUTLINE[1:]):
+    if a_[1] <= EXIT_Y + 1 and b_[1] <= EXIT_Y + 1: continue                  # the open side onto the ladder
+    zs = [gs(a_[0] + (b_[0] - a_[0]) * t_, a_[1] + (b_[1] - a_[1]) * t_) for t_ in np.linspace(0, 1, 6)]
+    clip_slab(a_, b_, min(zs) - 96, max(zs) + 420); nclip += 1
+    # the visible fence: barbed-wire panels on pickets, gaps and leans where shellfire got it
+    L_ = math.hypot(b_[0] - a_[0], b_[1] - a_[1]); yaw = math.degrees(math.atan2(b_[1] - a_[1], b_[0] - a_[0]))
+    nseg = max(1, int(round(L_ / 128.0)))
+    for k in range(nseg):
+        if SK.rand() < 0.22: continue
+        t_ = (k + 0.5) / nseg; x_, y_ = a_[0] + (b_[0] - a_[0]) * t_, a_[1] + (b_[1] - a_[1]) * t_
+        prop(['wire_fence_a', 'wire_fence_b'][SK.randint(2)], x_, y_, gs(x_, y_) - 2, yaw + SK.uniform(-4, 4), roll=SK.uniform(-8, 8),
+             scale=(L_ / nseg / 128.0, 1, 1), solid='0', reg=False)
+        nfence += 1
+# ladders up the trench end: a leaning ladder to look at, an invisible ladder volume to climb (solid off on the visual one)
+for s in (-1, 1):
+    fl_ = float(LY.ground_low(np.array([s * EXIT_X]), np.array([EXIT_Y - 30]))[0]) - LY.DEPTH
+    g_ = max(gs(s * EXIT_X, EXIT_Y + 6), gs(s * EXIT_X, EXIT_Y + 30))
+    prop('ladder', s * EXIT_X, EXIT_Y - 40, fl_ - 7.0, 270 + SK.uniform(-3, 3), pitch=-29, solid='0', reg=False)
+    x0_, x1_ = sorted((s * (EXIT_X - 18), s * (EXIT_X + 18)))
+    vmesh.mesh_node(vmesh.box_mesh(x0_, EXIT_Y - 16, fl_, x1_, EXIT_Y - 8, g_ + 34, LADDER_TOOL), GROUP, bake=False, shadows=False, visexclude=True)
+    prop('sign_wood_gb' if s > 0 else 'sign_wood_de', s * (EXIT_X - 72), EXIT_Y - 4.6, fl_, 0, check=True)
+# the clearing: cover from logs, stumps, broken trees, scraped-up sandbag scrapes and dumped stores, placed in mirrored pairs
+cover = [('log_fallen', 5), ('stump_a', 3), ('stump_b', 3), ('tree_shattered_a', 1), ('tree_shattered_c', 1), ('tree_shattered_d', 1),
+         ('sandbag_low', 4), ('tl_bagpile', 2), ('crate_long', 1), ('crate_german', 1), ('wire_coil', 2), ('tl_planks', 1)]
+ncover = 0
+for name, cnt in cover:
+    for _ in range(cnt):
+        for attempt in range(25):
+            x_, y_ = SK.uniform(90, 1120), SK.uniform(3560, 4330)
+            if not inside_skirmish(x_, y_) or math.hypot(x_ - B_[0], y_ - B_[1]) < 170: continue
+            yaw = SK.uniform(0, 360)
+            ok = True
+            for sx in (1, -1):
+                f = PL.footprint('models/tw/%s/%s.vmdl' % (name, name), sx * x_, y_, gs(sx * x_, y_), yaw if sx > 0 else 180 - yaw, (1, 1, 1), 4.0)
+                if PL.hits(f): ok = False
+            if not ok: continue
+            for sx in (1, -1):
+                prop(name, sx * x_, y_, gs(sx * x_, y_) - (3 if 'log' in name or 'stump' in name else 0.5), yaw if sx > 0 else 180 - yaw,
+                     solid='0' if name == 'wire_coil' else '6', pad=2.0)
+            ncover += 2
+            break
+print('woods skirmish: exit at x=+-%.0f y=%.0f, %d clip walls, %d fence panels, %d cover props, %d trees/bushes cleared' % (EXIT_X, EXIT_Y, nclip, nfence, ncover, _drop))
+
 # ---------------------------------------------------------------- swap into the world
 kids = world.attr('children')
 kept = []
@@ -939,7 +1156,9 @@ for c in kids[2]:
                    'cs_minimap_boundary', 'point_nav_walkable', 'info_player_terrorist', 'info_player_counterterrorist'):
             continue
     kept.append(c)
-kids[2] = kept + vmaplib.new_children
+newc = [c for c in vmaplib.new_children if not SKIP_SIGS or obj_sig(c) not in SKIP_SIGS]
+print('skipped %d generated objects the user replaced' % (len(vmaplib.new_children) - len(newc)))
+kids[2] = kept + newc
 counts = {}
 for c in kids[2]:
     if c.type == 'CMapEntity':
