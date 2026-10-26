@@ -180,14 +180,14 @@ def tun_in(x, y, strict=True):
 def tun_floor(x, y):
     ax = abs(x)
     if LY.TUN_SAP_X[0] <= ax <= LY.TUN_SAP_X[1] and y >= LY.TUN_SAP_Y:
-        top = float(LY.ground_low(np.array([math.copysign(1641.0, x)]), np.array([LY.TUN_PORTAL_Y]))[0]) - LY.DEPTH - 12.0
+        top = float(LY.ground_low(np.array([math.copysign(LY.TUN_SAP_XC, x)]), np.array([LY.TUN_PORTAL_Y + 24]))[0]) - LY.DEPTH - 12.0
         t = (y - LY.TUN_SAP_Y) / (LY.TUN_PORTAL_Y - LY.TUN_SAP_Y)
         return LY.TUN_FLOOR + t * (top - LY.TUN_FLOOR)
     if abs(x) <= 176 and -3536 <= y <= -3200: return LY.TUN_FLOOR - 6.0
     return LY.TUN_FLOOR + 2.0 * float(fbm(np.array([x / 300.0]), np.array([y / 300.0]), 2.2, 2, seed=61)[0])
 def tun_ceil(x, y):
     k = tun_in(x, y, strict=False)
-    h = 128.0 if (abs(x) <= 176 and -3536 <= y <= -3200) else 108.0 if (1536 <= abs(x) <= 1712 and -3360 <= y <= -3232) else 92.0
+    h = 128.0 if (abs(x) <= 176 and -3536 <= y <= -3200) else 108.0 if (LY.TUN_LANDING[0] <= abs(x) <= LY.TUN_LANDING[2] and LY.TUN_LANDING[1] <= y <= LY.TUN_LANDING[3]) else 92.0
     g = float(LY.ground_low(np.array([x]), np.array([y]))[0])
     return min(tun_floor(x, y) + h, g - 6.0)
 def tun_cut(CX, CY, r):
@@ -297,7 +297,7 @@ for (tx, ty), r in tiles.items():
         cx = (X[i, j] + X[i + 1, j + 1]) / 2; cy = (Y[i, j] + Y[i + 1, j + 1]) / 2
         return BLEND_BATTLE if in_battle(cx, cy) else BLEND_FOREST
     CXc = (X[:-1, :-1] + X[1:, 1:]) / 2; CYc = (Y[:-1, :-1] + Y[1:, 1:]) / 2
-    cut = tun_cut(CXc, CYc, r) if (abs(abs(tx + TILE / 2) - 1648) < 400 and abs(ty + TILE / 2 + 3000) < 400) else None
+    cut = tun_cut(CXc, CYc, r) if (abs(abs(tx + TILE / 2) - LY.TUN_SAP_XC) < 400 and abs(ty + TILE / 2 + 3000) < 400) else None
     verts, faces, mats, (pa, ti) = vmesh.grid_sheet(X, Y, Z, fm, valid=None if cut is None or not cut.any() else ~cut, vert_attr=(PA, TI))
     vmesh.mesh_node(vmesh.polymesh_open(verts, faces, mats, paint=pa, tint=ti), GROUP, bake=True, shadows=True)
     nquads += len(faces)
@@ -1030,7 +1030,8 @@ T_FLOOR = MATS['mud_wet']; T_WALL = MATS['dirt2']; T_ROOF = 'materials/de_train/
 for m_ in (T_FLOOR, T_WALL): vmesh.TEX_SIZE[m_] = (1024, 1024)
 vmesh.TEX_SIZE[T_ROOF] = (1024, 512)
 c_ = LY.TUN_CELL
-gx = np.arange(-1712.0, 1712.0 + 1, c_); gy = np.arange(-3536.0, LY.TUN_PORTAL_Y + 1, c_)
+TX_ = max(r_[2] for r_ in TUN)
+gx = np.arange(-TX_, TX_ + 1, c_); gy = np.arange(-3536.0, LY.TUN_PORTAL_Y + 1, c_)
 nxc, nyc = len(gx) - 1, len(gy) - 1
 occ = np.zeros((nxc, nyc), bool)
 for i in range(nxc):
@@ -1063,6 +1064,15 @@ for i, j in zip(*np.nonzero(occ)):
 vmesh.mesh_node(vmesh.polymesh_open(tverts, tfaces, tmats), GROUP, bake=True, shadows=True)
 print('mine tunnels: %d cells, %d faces' % (occ.sum(), len(tfaces)))
 
+def tun_lamp(x, y, z, lm, col, rmax=130.0, shadows=False):
+    """unshadowed baked lamp (CS2 has 4 shadow slots per overlap); range kept short of the surface and the next gallery"""
+    gx, gy = np.meshgrid(np.arange(-rmax, rmax + 1, 16.0), np.arange(-rmax, rmax + 1, 16.0))
+    gz_ = LY.ground_low(x + gx.ravel(), y + gy.ravel())
+    d = np.sqrt(gx.ravel() ** 2 + gy.ravel() ** 2 + (gz_ - z) ** 2).min()
+    r = max(70.0, min(rmax, d - 14.0))
+    ent('light_omni2', (x, y, z), (90, 0, 0), group=GROUP, brightness_units='1', brightness_lumens=str(int(lm)), brightness='1',
+        color=col, range='%.0f' % r, directlight='3', castshadows='1' if shadows else '0', colormode='0', enabled='1', bouncescale='1.0', shape='0')
+    return r
 def tun_runs():
     """centre lines of the narrow passages: (x0, y0, x1, y1, width) along their long axis"""
     for (x0, y0, x1, y1, k) in TUN:
@@ -1092,42 +1102,47 @@ for (A, B, w, k) in tun_runs():
             x_, y_ = A[0] + ux * t_, A[1] + uy * t_
             prop('duckboard_128', x_, y_, tun_floor(x_, y_) + 0.5, yaw + TN.uniform(-1.5, 1.5), reg=False)
             t_ += 128.0
-    t_ = 100.0
+    t_ = 90.0
     while t_ < L_ - 40:                    # lamps hung under the caps
         x_, y_ = A[0] + ux * t_, A[1] + uy * t_
-        cz_ = tun_ceil(x_, y_)
-        ent('light_omni2', (x_, y_, cz_ - 16), (90, 0, 0), group=GROUP, brightness_units='1', brightness_lumens='380', brightness='1',
-            color='255 184 110', range='300', directlight='3', castshadows='1', colormode='0', enabled='1', bouncescale='1.0', shape='0')
+        tun_lamp(x_, y_, tun_ceil(x_, y_) - 16, 340, '255 184 110')
         nlamp += 1
-        t_ += 230.0 + TN.uniform(-20, 20)
+        t_ += 200.0 + TN.uniform(-15, 15)
 # the landings at the foot of each sap: winding gear, spoil, timber, tools; the listening posts; the charge in the mine chamber
 def tprop(name, x, y, yaw=None, dz=0.0, stock=None, solid='6'):
     return prop(name, x, y, tun_floor(x, y) + dz, TN.uniform(0, 360) if yaw is None else yaw, stock=stock, solid=solid, check=True, pad=2.0)
 for s in (-1, 1):
+    dx_ = LY.TUN_SAP_XC - 1648.0
     for (nm, x, y, yaw) in (('tl_bagpile', 1690, -3340, 0), ('tl_bagpile', 1660, -3348, 10), ('tl_planks', 1556, -3250, 90), ('tl_tools', 1700, -3260, 0),
                             ('tl_bucket', 1670, -3250, None), ('crate_long' if s > 0 else 'crate_german', 1560, -3345, 0), ('tl_wirereel', 1600, -3346, 0)):
-        tprop(nm, s * x, y, None if yaw is None else (yaw if s > 0 else 180 - yaw))
-    for (x, y) in ((1024, -3200), (464, -3512)):           # listening posts: a bench and a telephone
+        tprop(nm, s * (x + dx_), y, None if yaw is None else (yaw if s > 0 else 180 - yaw))
+    for (x, y) in ((1024, -3200), (464, -3512), (1680, -3200)):           # listening posts: a bench and a telephone
         tprop('tl_bench', s * x, y, 0 if s > 0 else 180)
         tprop(None, s * (x + 14), y + 4, 90, dz=18.0, stock=EXT('field_telephone'))
-        ent('light_omni2', (s * x, y, tun_ceil(s * x, y) - 18), (90, 0, 0), group=GROUP, brightness_units='1', brightness_lumens='160', brightness='1',
-            color='255 170 96', range='160', directlight='3', castshadows='1', colormode='0', enabled='1', bouncescale='1.0', shape='0')
-    for (x, y) in ((1620, -3300), (900, -3270)):
+        tun_lamp(s * x, y, tun_ceil(s * x, y) - 18, 160, '255 170 96', rmax=110.0)
+    for (x, y) in ((LY.TUN_SAP_XC - 28, -3300), (900, -3270), (1500, -3460)):
         tprop('tl_lantern', s * x, y)
-    wall_sign('sign_sap_gb' if s > 0 else 'sign_sap_de', 1641, -2850)
+    wall_sign('sign_sap_gb' if s > 0 else 'sign_sap_de', LY.TUN_SAP_XC, -2760)
     # portal: a heavier set framing the opening
-    fl_ = tun_floor(s * 1648, LY.TUN_PORTAL_Y - 6)
-    prop('tunnel_set', s * 1648, LY.TUN_PORTAL_Y - 6, fl_, 90, scale=(1.3, 1.2, max(0.6, (tun_ceil(s * 1648, LY.TUN_PORTAL_Y - 6) - fl_) / 92.0)), reg=False)
+    xp_ = s * LY.TUN_SAP_XC
+    fl_ = tun_floor(xp_, LY.TUN_PORTAL_Y - 6)
+    prop('tunnel_set', xp_, LY.TUN_PORTAL_Y - 6, fl_, 90, scale=(1.3, 1.2, max(0.6, (tun_ceil(xp_, LY.TUN_PORTAL_Y - 6) - fl_) / 92.0)), reg=False)
 # the mine chamber: tamped charge of ammonal boxes, sandbag tamping, the firing cable and the officer's table
 for (nm, x, y, yaw, dz) in (('crate_shells', -24, -3380, 0, 0), ('crate_shells', 24, -3380, 0, 0), ('crate_shells', 0, -3380, 0, 12.6),
                             ('crate_shells', -24, -3352, 0, 0), ('crate_shells', 24, -3352, 0, 0), ('crate_shells', 0, -3352, 0, 12.6),
                             ('sandbag_low', 0, -3420, 0, 0), ('sandbag_low', 0, -3312, 0, 0), ('tl_wirereel', -110, -3470, 90, 0), ('tl_wirereel', 110, -3260, 90, 0)):
     prop(nm, x, y, tun_floor(x, y) + dz, yaw, check=True, pad=1.0)
-for (x, y) in ((-120, -3360), (120, -3360), (0, -3500), (0, -3230)):
-    ent('light_omni2', (x, y, tun_ceil(x, y) - 18), (90, 0, 0), group=GROUP, brightness_units='1', brightness_lumens='420', brightness='1',
-        color='255 180 104', range='320', directlight='3', castshadows='1', colormode='0', enabled='1', bouncescale='1.0', shape='0')
-clone('env_combined_light_probe_volume', (0, -3216, -200), box_mins='-1760 -340 -90', box_maxs='1760 340 120', voxel_size='32.0', targetname='tunnel_probe')
+for (x, y) in ((0, -3300), (0, -3440)):            # the chamber keeps two shadowed lamps (only the sun overlaps them)
+    tun_lamp(x, y, tun_ceil(x, y) - 18, 600, '255 180 104', rmax=150.0, shadows=True)
+clone('env_combined_light_probe_volume', (0, -3216, -200), box_mins='-2260 -340 -90', box_maxs='2260 400 120', voxel_size='32.0', targetname='tunnel_probe')
 print('mine tunnels: %d timber sets, %d lamps' % (nsets, nlamp))
+# agent models the script puts on the players: a prop of each below the lobby so the map precaches them
+AGENTS = ['tm_jungle_raider/tm_jungle_raider_variant' + v for v in ('f2', 'f', 'a', 'b', 'c')] + \
+         ['ctm_gendarmerie/ctm_gendarmerie_variant' + v for v in ('b', 'a', 'd')]
+for i, a_ in enumerate(AGENTS):
+    ent('prop_dynamic', (-280 + 80 * i, 0, LZ - 400), (0, 0, 0), group=GROUP, targetname='tw_agent_%d' % i,
+        model='characters/models/%s.vmdl' % a_, solid='0', disableshadows='1', rendercolor='255 255 255', skin='default',
+        DefaultAnim='', fademindist='-1', fademaxdist='0', StartDisabled='0', HoldAnimation='0', RandomAnimation='0')
 
 # ---------------------------------------------------------------- woods skirmish: a ladder out of the north end of each fire trench,
 # a fenced track through the shell-holes and a fenced clearing in the wood where both sides meet (own rng: nothing above shifts)

@@ -20,6 +20,11 @@ import { Instance, CSInputs, CSMoveType, CSDamageTypes, CustomCameraMode } from 
 // ------------------------------------------------------------------ settings
 const CONFIG = {
   HUD: "tw_hud",
+  AGENTS: {
+    2: ["tm_jungle_raider/tm_jungle_raider_variantf2", "tm_jungle_raider/tm_jungle_raider_variantf", "tm_jungle_raider/tm_jungle_raider_varianta",
+        "tm_jungle_raider/tm_jungle_raider_variantb", "tm_jungle_raider/tm_jungle_raider_variantc"],
+    3: ["ctm_gendarmerie/ctm_gendarmerie_variantb", "ctm_gendarmerie/ctm_gendarmerie_varianta", "ctm_gendarmerie/ctm_gendarmerie_variantd"],
+  },
   LOBBY_FIRST: 4.0,          // seconds in the briefing room on first spawn
   LOBBY_RESPAWN: 1.5,        // ... and after every respawn
   MORTAR_CHANCE: 0.4,        // chance a new player is put on a mortar crew (if a seat is free)
@@ -911,6 +916,8 @@ Instance.OnPlayerReset(({ player }) => {
   const team = pawn.GetTeamNumber();
   if (team === T || team === CT) {
     if (p.team !== team) { leaveSeat(p); p.role = null; p.team = team; }
+    const ag = CONFIG.AGENTS[team];
+    try { pawn.SetModel("characters/models/" + ag[s % ag.length] + ".vmdl"); } catch (e) {}
     chooseRole(p, pawn, team);
   }
 });

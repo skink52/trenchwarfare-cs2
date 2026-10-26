@@ -133,6 +133,13 @@ Done this session (since the first delivery):
   26 lamps (light_omni2), sap signs `sign_sap_gb/de`, tunnel_probe. Radar shows galleries (dark band, dashed timber edge, lamp dots).
   Generated output kept as out/gen_tw9.vmap (pass as argv[4] next time with the user's newest vmap as argv[1]).
 
+- tw10 (26 Oct): saps moved to the south end of the SUPPORT trench (x 2096-2192, portal y -2816; `LY.TUN_SAP_XC`, `TUN_LANDING`),
+  galleries extended to x 2032, extra cross-cut (1376) and listening post (1680). Tunnel lamps unshadowed (CS2 4-slot shadow limit;
+  `tun_lamp` caps range by distance to the surface, max 130), only the chamber keeps 2 shadowed lamps. tunnel_set cap/sill yaw fixed
+  (euler(90,0,0)). Agents: script SetModel on OnPlayerReset (T Guerrilla Warfare f2/f/a/b/c, CT Gendarmerie b/a/d, by slot), precached by
+  prop_dynamic `tw_agent_N` below the lobby. Next: recolour (khaki/feldgrau) + Brodie/Stahlhelm pass on copies of those agents.
+  Generated output: out/gen_tw10.vmap.
+
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
 - Done 03:12: shelter candles + baked warm light, wreck/crater smoke, distant smoke columns, damaged-plane smoke (HP <= 45).

@@ -173,8 +173,8 @@ def tunnel_set(lod=0, seed=0, width=80.0, height=92.0):
         y = s * (width / 2 - 4.5)
         m.add(geo.tube([(rng.uniform(-0.6, 0.6), y, -2), (rng.uniform(-0.6, 0.6), y + s * rng.uniform(-0.8, 0.4), height - 7)], [4.2, 3.9], sides=sides,
                        mat='bark', part=geo.frame(seed=seed + s)))
-    m.add(geo.plank(width + 4, 7.5, 7.0, mat='wood', seg=1, div=(4, 1, 1), warp=0.6, seed=seed + 7, R=geo.euler(0, 0, 90), t=(0, 0, height - 3.5), tone=rng.rand()))
-    m.add(geo.plank(width - 2, 5.0, 3.0, mat='wood', seg=1, div=(3, 1, 1), warp=0.3, seed=seed + 8, R=geo.euler(0, 0, 90), t=(0, 0, 0.5), tone=rng.rand()))
+    m.add(geo.plank(width + 4, 7.5, 7.0, mat='wood', seg=1, div=(4, 1, 1), warp=0.6, seed=seed + 7, R=geo.euler(90, 0, 0), t=(0, 0, height - 3.5), tone=rng.rand()))
+    m.add(geo.plank(width - 2, 5.0, 3.0, mat='wood', seg=1, div=(3, 1, 1), warp=0.3, seed=seed + 8, R=geo.euler(90, 0, 0), t=(0, 0, 0.5), tone=rng.rand()))
     if lod == 0:
         for k in range(3):
             m.add(geo.plank(22, 9.0, 1.4, mat='wood', seg=1, div=(2, 1, 1), warp=0.3, seed=seed + 20 + k,

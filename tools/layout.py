@@ -287,16 +287,17 @@ def plane_spawns(s):
 # ---------------------------------------------------------------- mine tunnels at the south end (both sides meet under no man's land)
 TUN_CELL = 16.0
 TUN_FLOOR = -260.0
-TUN_PORTAL_Y = -2912.0                  # the sap opens in the south end wall of the first fire-trench bay
-TUN_SAP_Y = -3232.0                     # foot of the incline
-TUN_SAP_X = (1600.0, 1696.0)
+TUN_PORTAL_Y = -2816.0; TUN_SAP_Y = -3232.0; TUN_SAP_X = (2096.0, 2192.0); TUN_SAP_XC = 2144.0
+TUN_LANDING = (2032.0, -3360.0, 2208.0, -3232.0)
 
 
 def tunnels():
-    """(x0, y0, x1, y1, kind) world rects on a 16-unit grid, both sides; kinds: sap, landing, gallery, cross, post, chamber"""
-    ct = [(1600, -3232, 1696, -2912, 'sap'), (1536, -3360, 1712, -3232, 'landing'),
-          (176, -3312, 1536, -3232, 'gallery'), (1456, -3488, 1536, -3312, 'cross'), (176, -3488, 1456, -3408, 'gallery'),
-          (736, -3408, 816, -3312, 'cross'), (992, -3232, 1056, -3168, 'post'), (432, -3536, 496, -3488, 'post')]
+    """(x0, y0, x1, y1, kind) world rects on a 16-unit grid, both sides; kinds: sap, landing, gallery, cross, post, chamber.
+    The sap leaves the south end of the support trench (XS)."""
+    ct = [(2096, -3232, 2192, -2816, 'sap'), (2032, -3360, 2208, -3232, 'landing'),
+          (176, -3312, 2032, -3232, 'gallery'), (1952, -3488, 2032, -3312, 'cross'), (176, -3488, 1952, -3408, 'gallery'),
+          (736, -3408, 816, -3312, 'cross'), (1376, -3408, 1456, -3312, 'cross'), (992, -3232, 1056, -3168, 'post'), (432, -3536, 496, -3488, 'post'),
+          (1648, -3232, 1712, -3168, 'post')]
     out = []
     for (x0, y0, x1, y1, k) in ct:
         out.append((float(x0), float(y0), float(x1), float(y1), k)); out.append((float(-x1), float(y0), float(-x0), float(y1), k))
