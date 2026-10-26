@@ -193,6 +193,9 @@ Done this session (since the first delivery):
   square (CONFIG.RADAR) to check alignment in game. Adds ladders, dressing-station crosses, sap entrances. out/radar_region.json feeds
   render_top.py (mortar sight). If still off in game: compare a `!pos` square with where the dot is drawn.
 
+- tw22: LOD pops visible at ~300 u: all LOD switch thresholds x4 (modelio.LOD_SCALE = 4 applied to every prop's lod_thresholds;
+  the 54 existing vmdls patched in place: 12->48, 20->80, 25->100, 30->120, 60->240). Stock Valve foliage keeps its own LODs.
+
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
 - Done 03:12: shelter candles + baked warm light, wreck/crater smoke, distant smoke columns, damaged-plane smoke (HP <= 45).

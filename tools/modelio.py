@@ -84,6 +84,9 @@ def _filter():
     return 'import_filter =\n{\nexclude_by_default = false\nexception_list = [  ]\n}'
 
 
+LOD_SCALE = 4.0          # LOD switches 4x further out than the per-prop values (playtest: swaps visible at ~300 units)
+
+
 def vmdl_text(name, rel_dir, meshes, remaps, hulls, surface='default', lod_thresholds=None, archetype='static_prop_model', entity='prop_static'):
     """meshes: list of mesh names (files <rel_dir>/<mesh>.smd), LOD order; remaps: [(from, to)]"""
     T = '\t'
@@ -99,7 +102,7 @@ def vmdl_text(name, rel_dir, meshes, remaps, hulls, surface='default', lod_thres
                 '\t\t\t\t\t\timport_filter =\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\texclude_by_default = false\n\t\t\t\t\t\t\texception_list = [  ]\n\t\t\t\t\t\t}\n\t\t\t\t\t},\n') % (m, rel_dir, m)
     out.append('\t\t\t{\n\t\t\t\t_class = "RenderMeshList"\n\t\t\t\tchildren =\n\t\t\t\t[\n%s\t\t\t\t]\n\t\t\t},' % rmf)
     if len(meshes) > 1:
-        th = lod_thresholds or [0.0] + [20.0 * (2 ** k) for k in range(len(meshes) - 1)]
+        th = [t * LOD_SCALE for t in (lod_thresholds or [0.0] + [20.0 * (2 ** k) for k in range(len(meshes) - 1)])]
         groups = ''
         for m, t in zip(meshes, th):
             groups += ('\t\t\t\t\t{\n\t\t\t\t\t\t_class = "LODGroup"\n\t\t\t\t\t\tmesh_references =\n\t\t\t\t\t\t[\n\t\t\t\t\t\t\t{\n'
