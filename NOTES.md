@@ -4,7 +4,7 @@ Read this first when resuming. Newest state at the top.
 
 ## State 2026-10-26 ~13:15 ACDT (tw8_content_01.zip radar, tw8_game.zip overview)
 
-- Radar: `tools/make_radar.py <vmap> <addon> <game>` - 2048 px painted trench map of x,y +-6800 (overview pos -6800/6800, scale
+- Radar: `tools/make_radar.py <vmap> <addon> <game>` - 1024 px, pos -4300/4700, scale 8.40 (was: 2048 px painted trench map of x,y +-6800, scale
   13.2812): hillshade + contours, churned no man's land, crater and trench pools (clipped to the floor), revetted trenches with sandbag
   lips and duckboards, shelters, mortar pits, wire, wrecks, every tree crown with shadow, both aerodromes with hangars and parked
   aircraft, skirmish fence + exit ladders, labels, compass, scale bar; areas players can't walk are dimmed. BC7. Built from the
@@ -186,6 +186,12 @@ Done this session (since the first delivery):
   so the wood is on it. Unpack bat fixed: applied-list lines had a trailing space so findstr /x never matched and every zip from
   tw7 on was re-extracted on every run; now /b match, (echo x)>>file, loop tw2..tw99.
   TODO generator: per-section rng so user obstacles don't cascade; until then prefer patch_vmap.py-style deltas on the user's map.
+
+- tw21: radar rebuilt from scratch on the validated cs2port conventions: 1024 png, vtex template (max 1024, no lod, clamp), overview
+  txt template (material overviews/<map>_radar, pos = top-left corner, scale %.2f, CT/T spawn fractions). Region fitted to the ground play
+  space: pos_x -4300, pos_y 4700, scale 8.40 (span 8601.6; aerodromes off the map). 16x16 lettered grid; `!pos` prints position + grid
+  square (CONFIG.RADAR) to check alignment in game. Adds ladders, dressing-station crosses, sap entrances. out/radar_region.json feeds
+  render_top.py (mortar sight). If still off in game: compare a `!pos` square with where the dot is drawn.
 
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).

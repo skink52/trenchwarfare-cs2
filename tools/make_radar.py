@@ -1,7 +1,7 @@
-"""Radar / overview for mg_trenchwarfare: a 2048 px painted trench-map of the whole play space (trenches, no man's land, mortar line,
-the wood and its skirmish clearing, both aerodromes), built from the layout and from the generated map itself (trees, wire, water).
-usage: make_radar.py <vmap> <addon content out> <addon game out>
-writes panorama/images/overheadmaps/mg_trenchwarfare_radar_psd.png (+ .vtex) and resource/overviews/mg_trenchwarfare.txt"""
+"""Radar / minimap for mg_trenchwarfare, fitted to the ground play space (trenches, no man's land, mortar line, the wood clearing, the mine
+galleries; the aerodromes are left off). Same conventions as the cs2port radar that works in game: 1024 px png + vtex (max 1024, no lod),
+game resource/overviews/<map>.txt with pos_x/pos_y = world position of the image's top-left corner and scale = world units per pixel.
+usage: make_radar.py <vmap> <addon content out> <addon game out>"""
 import os, sys, math, re
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -11,17 +11,20 @@ import layout as LY
 from noise import fbm
 
 VMAP = sys.argv[1]; OUT = sys.argv[2]; GAME = sys.argv[3]
-HALF = 6800.0                    # square covered: x, y in [-HALF, HALF]
-N = 2048                         # final size
+SCALE = 8.40                     # world units per pixel of the 1024 image (written to the overview as is)
+SPAN = SCALE * 1024              # square side in world units
+X0, Y0 = -4300.0, 4700.0         # world position of the image's top-left corner (pos_x, pos_y)
+OUT_N = 1024                     # shipped size
+N = 2048                         # terrain raster
 SS = 2                           # supersampling for the vector work
 M = N * SS
-UPP = 2 * HALF / M               # world units per canvas pixel
+UPP = SPAN / M                   # world units per canvas pixel
 
-def px(x, y): return ((x + HALF) / UPP, (HALF - y) / UPP)
+def px(x, y): return ((x - X0) / UPP, (Y0 - y) / UPP)
 def plen(u): return u / UPP
 
 # ---------------------------------------------------------------- world raster (2048, then upscaled)
-xs = np.linspace(-HALF, HALF, N); ys = np.linspace(HALF, -HALF, N)
+xs = X0 + (np.arange(N) + 0.5) * SPAN / N; ys = Y0 - (np.arange(N) + 0.5) * SPAN / N
 X, Y = np.meshgrid(xs, ys)
 Z = np.zeros((N, N)); PZ = np.zeros((N, N)); PD = np.full((N, N), 1e9); TD = np.zeros((N, N))
 for r0 in range(0, N, 256):
@@ -31,7 +34,7 @@ for r0 in range(0, N, 256):
     TD[sl] = LY.trench_dist(X[sl], Y[sl])[0]
 bank = (PD >= 2) & (PD <= 116)
 Zs = np.where(bank, np.maximum(Z, PZ), Z)
-gy, gx = np.gradient(Zs, 2 * HALF / N)
+gy, gx = np.gradient(Zs, SPAN / N)
 L = np.array([-0.55, 0.45, 0.70]); L /= np.linalg.norm(L)
 nrm = np.stack([-gx, gy, np.ones_like(Zs)], -1); nrm /= np.linalg.norm(nrm, axis=-1, keepdims=True)
 shade = np.clip(nrm @ L, 0, 1) / L[2]
@@ -132,7 +135,7 @@ for W in TRENCH_POOLS:
     if len(W) < 3: continue
     try: h = W[ConvexHull(W).vertices]
     except Exception: continue
-    dp.polygon([px(*p) for p in h], fill=(78, 94, 96, 255))
+    dp.polygon([px(*p) for p in h], fill=(56, 64, 60, 255))
 pnp = np.asarray(pool).copy(); pnp[~(wall_np & ~rim)] = 0
 layer = Image.alpha_composite(layer, Image.fromarray(pnp)); dr = ImageDraw.Draw(layer)
 for s in (-1, 1):
@@ -325,6 +328,22 @@ for (x0, y0, x1, y1, k) in TR:
             y = (y0 + y1) / 2 if x1 - x0 > y1 - y0 else y0 + (y1 - y0) * f
             q = px(x, y); r = plen(9); dr.ellipse([q[0] - r, q[1] - r, q[0] + r, q[1] + r], fill=(255, 196, 110, 210))
 
+# ladders out of the trenches (every ladder prop), dressing stations (red cross), sap entrances
+def glyph_ladder(x, y, yaw):
+    ux, uy = math.cos(yaw), math.sin(yaw); vx, vy = -uy, ux
+    def P(f, r): return px(x + ux * f + vx * r, y + uy * f + vy * r)
+    for r in (-11, 11): dr.line([P(-26, r), P(26, r)], fill=(232, 214, 160, 255), width=2 * SS)
+    for f in (-18, -6, 6, 18): dr.line([P(f, -11), P(f, 11)], fill=(232, 214, 160, 255), width=SS + 1)
+for (m, o, a, sc) in props:
+    if m.endswith('/ladder.vmdl'): glyph_ladder(o[0], o[1], math.radians(a[1]))
+for s_ in (-1, 1):
+    for y in LY.SHELTER_Y:
+        c = px(s_ * (LY.XS + LY.HW + 4 + 48), y); r = plen(34)
+        dr.ellipse([c[0] - r, c[1] - r, c[0] + r, c[1] + r], fill=(236, 230, 214, 255), outline=(120, 30, 26, 255), width=SS)
+        w = plen(9); h = plen(24)
+        dr.rectangle([c[0] - w, c[1] - h, c[0] + w, c[1] + h], fill=(178, 34, 30, 255)); dr.rectangle([c[0] - h, c[1] - w, c[0] + h, c[1] + w], fill=(178, 34, 30, 255))
+    c = px(s_ * LY.TUN_SAP_XC, LY.TUN_PORTAL_Y - 30); r = plen(40)
+    dr.pieslice([c[0] - r, c[1] - r, c[0] + r, c[1] + r], 180, 360, fill=(30, 22, 16, 255), outline=(232, 214, 160, 255), width=2 * SS)
 out.convert('RGB').save(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'out', 'radar_clean.png'))     # unlabelled, for the mortar sight (render_top.py)
 # ---------------------------------------------------------------- lettering, compass, frame
 def label(text, x, y, size, col=(232, 220, 186), alpha=200, rot=0, spacing=0.18, font='/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf'):
@@ -344,33 +363,38 @@ label("NO MAN'S LAND", 0, 0, 30, alpha=150, rot=90, spacing=0.5)
 label('GERMAN LINES', -2760, -3040, 24, col=(222, 196, 170), alpha=190)
 label('BRITISH LINES', 2760, -3040, 24, col=(214, 214, 186), alpha=190)
 label('THE WOOD', 0, 3950, 26, alpha=200, spacing=0.35)
-label('MINE GALLERIES', 0, -3680, 13, alpha=180, font='/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf')
+label('MINE GALLERIES', 0, -3640, 14, alpha=180, font='/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf')
 label('MINENWERFER', -LY.MORTAR_X, 1980, 17, alpha=170)
 label('TRENCH MORTARS', LY.MORTAR_X, 1980, 17, alpha=170)
-label('FLIEGERABTEILUNG', -5650, -1330, 17, alpha=180)
-label('R.F.C. AERODROME', 5650, -1330, 17, alpha=180)
 label('PICCADILLY', LY.XS + 120, -60, 13, alpha=170, rot=90, font='/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf')
 label('UNTER DEN LINDEN', -LY.XS - 120, -60, 13, alpha=170, rot=90, font='/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf')
 
-# compass rose (top right, out of play)
-cx_, cy_ = px(5900, 5900); R = plen(420)
+# grid: 16 x 16 squares lettered A-P across, 1-16 down (the same squares the script's !pos reports)
 dr = ImageDraw.Draw(out)
+fG = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf', int(15 * SS))
+for k in range(1, 16):
+    t = M * k / 16
+    dr.line([(t, 0), (t, M)], fill=(232, 220, 186, 46), width=SS); dr.line([(0, t), (M, t)], fill=(232, 220, 186, 46), width=SS)
+for k in range(16):
+    c = M * (k + 0.5) / 16
+    dr.text((c - 5 * SS, 4 * SS), chr(65 + k), font=fG, fill=(232, 220, 186, 170))
+    dr.text((4 * SS, c - 9 * SS), str(k + 1), font=fG, fill=(232, 220, 186, 170))
+# compass (north = +y = up) and a 1000-unit scale bar, bottom left inside the frame
+cx_, cy_ = px(X0 + 380, Y0 - SPAN + 700); R = plen(200)
 dr.ellipse([cx_ - R, cy_ - R, cx_ + R, cy_ + R], outline=(214, 196, 150, 200), width=3)
-dr.ellipse([cx_ - R * 0.86, cy_ - R * 0.86, cx_ + R * 0.86, cy_ + R * 0.86], outline=(214, 196, 150, 120), width=2)
 for k in range(4):
     a = math.pi / 2 * k
     tip = (cx_ + math.sin(a) * R * 0.95, cy_ - math.cos(a) * R * 0.95)
     l_ = (cx_ + math.sin(a - 0.5) * R * 0.2, cy_ - math.cos(a - 0.5) * R * 0.2); r_ = (cx_ + math.sin(a + 0.5) * R * 0.2, cy_ - math.cos(a + 0.5) * R * 0.2)
     dr.polygon([tip, l_, (cx_, cy_)], fill=(232, 220, 186, 230)); dr.polygon([tip, r_, (cx_, cy_)], fill=(150, 136, 104, 230))
-fN = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf', int(26 * SS))
-dr.text((cx_ - 9 * SS, cy_ - R - 34 * SS), 'N', font=fN, fill=(232, 220, 186, 230))
-# scale bar: 1000 units (~25 m)
-x0_, y0_ = px(-6500, -6350); x1_, _ = px(-5500, -6350)
+fN = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf', int(20 * SS))
+dr.text((cx_ - 7 * SS, cy_ - R - 28 * SS), 'N', font=fN, fill=(232, 220, 186, 230))
+x0_, y0_ = px(X0 + 700, Y0 - SPAN + 260); x1_, _ = px(X0 + 1700, Y0 - SPAN + 260)
 for k in range(4):
-    dr.rectangle([x0_ + (x1_ - x0_) * k / 4, y0_ - 6 * SS, x0_ + (x1_ - x0_) * (k + 1) / 4, y0_ + 6 * SS], fill=(232, 220, 186, 220) if k % 2 == 0 else (60, 54, 44, 220),
+    dr.rectangle([x0_ + (x1_ - x0_) * k / 4, y0_ - 5 * SS, x0_ + (x1_ - x0_) * (k + 1) / 4, y0_ + 5 * SS], fill=(232, 220, 186, 220) if k % 2 == 0 else (60, 54, 44, 220),
                  outline=(232, 220, 186, 220))
-fS = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf', int(14 * SS))
-dr.text((x0_, y0_ + 10 * SS), '0', font=fS, fill=(232, 220, 186, 220)); dr.text((x1_ - 30 * SS, y0_ + 10 * SS), '25 m', font=fS, fill=(232, 220, 186, 220))
+fS = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf', int(13 * SS))
+dr.text((x0_, y0_ + 8 * SS), '0', font=fS, fill=(232, 220, 186, 220)); dr.text((x1_ - 30 * SS, y0_ + 8 * SS), '25 m', font=fS, fill=(232, 220, 186, 220))
 
 # vignette + paper grain
 o = np.asarray(out, np.float32)[..., :3]
@@ -378,19 +402,73 @@ yy, xx = np.mgrid[0:M, 0:M] / M - 0.5
 vig = np.clip(1.08 - 0.55 * (xx ** 2 + yy ** 2) * 2.2, 0.55, 1)[..., None]
 grain = np.asarray(Image.fromarray((ndimage.gaussian_filter(np.random.RandomState(9).rand(1024, 1024), 1.2) * 255).astype(np.uint8)).resize((M, M), Image.BICUBIC), np.float32)[..., None] / 255.0 - 0.5
 o = o * vig * (0.97 + 0.05 * grain)
-final = Image.fromarray(o.clip(0, 255).astype(np.uint8)).resize((N, N), Image.LANCZOS)
+final = Image.fromarray(o.clip(0, 255).astype(np.uint8)).resize((OUT_N, OUT_N), Image.LANCZOS)
 dst = os.path.join(OUT, 'panorama/images/overheadmaps'); os.makedirs(dst, exist_ok=True)
 final.save(os.path.join(dst, 'mg_trenchwarfare_radar_psd.png'), optimize=True)
-open(os.path.join(dst, 'mg_trenchwarfare_radar_psd.vtex'), 'w', newline='\n').write(
-    '<!-- dmx encoding keyvalues2_noids 1 format vtex 1 -->\n"CDmeVtex"\n{\n\t"m_inputTextureArray" "element_array" \n\t[\n\t\t"CDmeInputTexture"\n\t\t{\n'
-    '\t\t\t"m_name" "string" "0"\n\t\t\t"m_fileName" "string" "panorama/images/overheadmaps/mg_trenchwarfare_radar_psd.png"\n\t\t\t"m_colorSpace" "string" "srgb"\n'
-    '\t\t\t"m_typeString" "string" "2D"\n\t\t\t"m_imageProcessorArray" "element_array" \n\t\t\t[\n\t\t\t]\n\t\t}\n\t]\n'
-    '\t"m_outputTypeString" "string" "2D"\n\t"m_outputFormat" "string" "BC7"\n\t"m_nOutputMinDimension" "int" "0"\n\t"m_nOutputMaxDimension" "int" "1024"\n\t"m_bNoLod" "bool" "1"\n\t"m_textureOutputChannelArray" "element_array"\n\t[\n\t\t"CDmeTextureOutputChannel"\n\t\t{\n'
-    '\t\t\t"m_inputTextureArray" "string_array" [ "0" ]\n\t\t\t"m_srcChannels" "string" "rgba"\n\t\t\t"m_dstChannels" "string" "rgba"\n'
-    '\t\t\t"m_mipAlgorithm" "CDmeImageProcessor"\n\t\t\t{\n\t\t\t\t"m_algorithm" "string" "Box"\n\t\t\t\t"m_stringArg" "string" ""\n\t\t\t\t"m_vFloat4Arg" "vector4" "0 0 0 0"\n\t\t\t}\n'
-    '\t\t\t"m_outputColorSpace" "string" "srgb"\n\t\t}\n\t]\n}\n')
+open(os.path.join(dst, 'mg_trenchwarfare_radar_psd.vtex'), 'w', newline='\n').write('''<!-- dmx encoding keyvalues2_noids 1 format vtex 1 -->
+"CDmeVtex"
+{
+    "m_inputTextureArray" "element_array"
+    [
+        "CDmeInputTexture"
+        {
+            "m_name" "string" "SheetTexture"
+            "m_fileName" "string" "panorama/images/overheadmaps/mg_trenchwarfare_radar_psd.png"
+            "m_colorSpace" "string" "srgb"
+            "m_typeString" "string" "2D"
+            "m_imageProcessorArray" "element_array"
+            [
+            ]
+        }
+    ]
+    "m_outputTypeString" "string" "2D"
+    "m_outputFormat" "string" "BC7"
+    "m_outputClearColor" "vector4" "0 0 0 0"
+    "m_nOutputMinDimension" "int" "0"
+    "m_nOutputMaxDimension" "int" "1024"
+    "m_textureOutputChannelArray" "element_array"
+    [
+        "CDmeTextureOutputChannel"
+        {
+            "m_inputTextureArray" "string_array"
+            [
+                "SheetTexture"
+            ]
+            "m_srcChannels" "string" "rgba"
+            "m_dstChannels" "string" "rgba"
+            "m_mipAlgorithm" "CDmeImageProcessor"
+            {
+                "m_algorithm" "string" ""
+                "m_stringArg" "string" ""
+                "m_vFloat4Arg" "vector4" "0 0 0 0"
+            }
+            "m_outputColorSpace" "string" "srgb"
+        }
+    ]
+    "m_vClamp" "vector3" "0 0 0"
+    "m_bNoLod" "bool" "1"
+}
+''')
+def frac(x, y): return (x - X0) / SPAN, (Y0 - y) / SPAN
+ctx, cty = frac(LY.XF + 100, 0); tx, ty = frac(-LY.XF - 100, 0)
 os.makedirs(os.path.join(GAME, 'resource/overviews'), exist_ok=True)
-open(os.path.join(GAME, 'resource/overviews/mg_trenchwarfare.txt'), 'w', newline='\n').write(
-    '"mg_trenchwarfare"\n{\n\t"material"\t"overviews/mg_trenchwarfare"\n\t"pos_x"\t"%d"\n\t"pos_y"\t"%d"\n\t"scale"\t"%.4f"\n\t"rotate"\t"0"\n\t"zoom"\t"1"\n}\n'
-    % (-HALF, HALF, 2 * HALF / 1024))
-print('radar: %d trees, %d water patches, %d props -> %s' % (len(trees), len(waters), len(props), dst))
+open(os.path.join(GAME, 'resource/overviews/mg_trenchwarfare.txt'), 'w', newline='\n').write('''// Overview (radar) for mg_trenchwarfare (tools/make_radar.py)
+"mg_trenchwarfare"
+{
+	"material"	"overviews/mg_trenchwarfare_radar"	// texture file
+	"pos_x"		"%d"	// upper left world coordinate
+	"pos_y"		"%d"
+	"scale"		"%.2f"
+	"rotate"	"0"
+	"zoom"		"1.0"
+
+	// loading screen icons and positions
+	"CTSpawn_x"	"%.2f"
+	"CTSpawn_y"	"%.2f"
+	"TSpawn_x"	"%.2f"
+	"TSpawn_y"	"%.2f"
+}
+''' % (X0, Y0, SCALE, ctx, cty, tx, ty))
+import json
+json.dump(dict(x0=X0, y0=Y0, span=SPAN), open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'out', 'radar_region.json'), 'w'))
+print('radar: %d trees, %d water patches, %d props -> %s (pos %d %d, scale %.2f)' % (len(trees), len(waters), len(props), dst, X0, Y0, SCALE))

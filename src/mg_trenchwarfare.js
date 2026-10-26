@@ -20,6 +20,7 @@ import { Instance, CSInputs, CSMoveType, CSDamageTypes, CustomCameraMode } from 
 // ------------------------------------------------------------------ settings
 const CONFIG = {
   HUD: "tw_hud",
+  RADAR: { x0: -4300, y0: 4700, span: 8601.6 },   // tools/make_radar.py region (overview pos_x/pos_y, 1024 px x scale 8.40)
   LOBBY_FIRST: 4.0,          // seconds in the briefing room on first spawn
   LOBBY_RESPAWN: 1.5,        // ... and after every respawn
   MORTAR_CHANCE: 0.4,        // chance a new player is put on a mortar crew (if a seat is free)
@@ -1069,6 +1070,14 @@ Instance.OnPlayerChat(({ player, text }) => {
   else if (t === "!infantry" || t === "!rifle") { p.pref = "infantry"; roleCard(p, "infantry"); if (p.team === T || p.team === CT) requestRole(p, "infantry"); }
   else if (t === "!air" || t === "!pilot") { p.pref = "air"; roleCard(p, "air"); if (p.team === T || p.team === CT) requestRole(p, "air"); }
   else if (t === "!swap") { const pw = toPawn(player); if (pw && pw.IsAlive()) swapRifle(p, pw); }
+  else if (t === "!pos") {
+    const pw = toPawn(player); if (pw) {
+      const o = pw.GetAbsOrigin(), R = CONFIG.RADAR;
+      const c = Math.floor((o.x - R.x0) / R.span * 16), r = Math.floor((R.y0 - o.y) / R.span * 16);
+      const ok = c >= 0 && c < 16 && r >= 0 && r < 16;
+      say("[tw] " + nameOf(s) + " at x " + Math.round(o.x) + " y " + Math.round(o.y) + " z " + Math.round(o.z) + "  radar square " + (ok ? String.fromCharCode(65 + c) + (r + 1) : "off the map"));
+    }
+  }
   else if (t === "!random") { p.pref = ""; toast(p, "Roles will be chosen for you", 3); }
   else if (t === "!roles") {
     const cnt = (team, r) => { let n = 0; for (const q of players.values()) if (q.team === team && q.role === r) n++; return n; };
