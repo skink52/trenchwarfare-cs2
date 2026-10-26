@@ -282,3 +282,23 @@ def mortar_stations(s, k):
 
 def plane_spawns(s):
     return [(s * (HANGAR_X - 640 + (60 if k % 2 else 0)), y) for k, y in enumerate((-720, -360, 0, 360, 720))]
+
+
+# ---------------------------------------------------------------- mine tunnels at the south end (both sides meet under no man's land)
+TUN_CELL = 16.0
+TUN_FLOOR = -260.0
+TUN_PORTAL_Y = -2912.0                  # the sap opens in the south end wall of the first fire-trench bay
+TUN_SAP_Y = -3232.0                     # foot of the incline
+TUN_SAP_X = (1600.0, 1696.0)
+
+
+def tunnels():
+    """(x0, y0, x1, y1, kind) world rects on a 16-unit grid, both sides; kinds: sap, landing, gallery, cross, post, chamber"""
+    ct = [(1600, -3232, 1696, -2912, 'sap'), (1536, -3360, 1712, -3232, 'landing'),
+          (176, -3312, 1536, -3232, 'gallery'), (1456, -3488, 1536, -3312, 'cross'), (176, -3488, 1456, -3408, 'gallery'),
+          (736, -3408, 816, -3312, 'cross'), (992, -3232, 1056, -3168, 'post'), (432, -3536, 496, -3488, 'post')]
+    out = []
+    for (x0, y0, x1, y1, k) in ct:
+        out.append((float(x0), float(y0), float(x1), float(y1), k)); out.append((float(-x1), float(y0), float(-x0), float(y1), k))
+    out.append((-176.0, -3536.0, 176.0, -3200.0, 'chamber'))
+    return out

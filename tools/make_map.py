@@ -171,6 +171,40 @@ def _plan_pools():
         WET[s_] = (wet, xs[0], ys[0], rs); WET_IN[s_] = inside; WET_FL[s_] = fl
 _plan_pools()
 
+# ---------------------------------------------------------------- mine tunnels (layout.tunnels): floor/ceiling heights, terrain cut
+TUN = LY.tunnels()
+def tun_in(x, y, strict=True):
+    for (x0, y0, x1, y1, k) in TUN:
+        if (x0 < x < x1 and y0 < y < y1) if strict else (x0 <= x <= x1 and y0 <= y <= y1): return k
+    return None
+def tun_floor(x, y):
+    ax = abs(x)
+    if LY.TUN_SAP_X[0] <= ax <= LY.TUN_SAP_X[1] and y >= LY.TUN_SAP_Y:
+        top = float(LY.ground_low(np.array([math.copysign(1641.0, x)]), np.array([LY.TUN_PORTAL_Y]))[0]) - LY.DEPTH - 12.0
+        t = (y - LY.TUN_SAP_Y) / (LY.TUN_PORTAL_Y - LY.TUN_SAP_Y)
+        return LY.TUN_FLOOR + t * (top - LY.TUN_FLOOR)
+    if abs(x) <= 176 and -3536 <= y <= -3200: return LY.TUN_FLOOR - 6.0
+    return LY.TUN_FLOOR + 2.0 * float(fbm(np.array([x / 300.0]), np.array([y / 300.0]), 2.2, 2, seed=61)[0])
+def tun_ceil(x, y):
+    k = tun_in(x, y, strict=False)
+    h = 128.0 if (abs(x) <= 176 and -3536 <= y <= -3200) else 108.0 if (1536 <= abs(x) <= 1712 and -3360 <= y <= -3232) else 92.0
+    g = float(LY.ground_low(np.array([x]), np.array([y]))[0])
+    return min(tun_floor(x, y) + h, g - 6.0)
+def tun_cut(CX, CY, r):
+    """terrain cells to drop: inside the sap footprint where any corner of the terrain cell dips below the tunnel roof
+    (the parapet layer above covers the opening)"""
+    out = np.zeros(CX.shape, bool)
+    for (x0, y0, x1, y1, k) in TUN:
+        if k != 'sap': continue
+        m = (CX > x0) & (CX < x1) & (CY > y0) & (CY < y1)
+        if not m.any(): continue
+        lo = np.full(m.sum(), 1e9)
+        for dx in (-r / 2, r / 2):
+            for dy in (-r / 2, r / 2):
+                lo = np.minimum(lo, LY.height(CX[m] + dx, CY[m] + dy))
+        out[m] = lo < np.array([tun_ceil(x_, y_) for x_, y_ in zip(CX[m], CY[m])]) + 2.0
+    return out
+
 
 def wet_at(X, Y):
     """0..1 wetness of the trench floor around standing water"""
@@ -262,7 +296,9 @@ for (tx, ty), r in tiles.items():
     def fm(i, j, X=X, Y=Y):
         cx = (X[i, j] + X[i + 1, j + 1]) / 2; cy = (Y[i, j] + Y[i + 1, j + 1]) / 2
         return BLEND_BATTLE if in_battle(cx, cy) else BLEND_FOREST
-    verts, faces, mats, (pa, ti) = vmesh.grid_sheet(X, Y, Z, fm, vert_attr=(PA, TI))
+    CXc = (X[:-1, :-1] + X[1:, 1:]) / 2; CYc = (Y[:-1, :-1] + Y[1:, 1:]) / 2
+    cut = tun_cut(CXc, CYc, r) if (abs(abs(tx + TILE / 2) - 1648) < 400 and abs(ty + TILE / 2 + 3000) < 400) else None
+    verts, faces, mats, (pa, ti) = vmesh.grid_sheet(X, Y, Z, fm, valid=None if cut is None or not cut.any() else ~cut, vert_attr=(PA, TI))
     vmesh.mesh_node(vmesh.polymesh_open(verts, faces, mats, paint=pa, tint=ti), GROUP, bake=True, shadows=True)
     nquads += len(faces)
 print('terrain: %d tiles, %d quads' % (len(tiles), nquads))
@@ -389,11 +425,13 @@ for s in (-1, 1):
         dx, dy = (p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L
         nx, ny = n[0] * s, n[1]
         yaw = yaw_for(nx, ny)
+        portal_wall = abs(n[1]) > 0.5 and abs(p0[1] - LY.TUN_PORTAL_Y) < 8 and LY.TUN_SAP_X[0] - 8 <= min(p0[0], p1[0]) and max(p0[0], p1[0]) <= LY.TUN_SAP_X[1] + 8
         for k in range(cnt):
             t = (k + 0.5) * L / cnt
             px, py = p0[0] + dx * t, p0[1] + dy * t
             name = REVETS[rng.randint(len(REVETS))] + ('_128' if unit > 64 else '')
             if kin == 'niche': continue          # the shelter mound lines the niche
+            if portal_wall: continue             # the mine sap opens here
             prop(name, s * px, py, base, yaw, scale=(sc * (1.0 + 0.01 * rng.rand()), 1, 1), shadows='0', reg=False)
             at_exit = abs(n[1]) > 0.5 and abs(p0[1] - EXIT_Y) < 8 and abs(px - EXIT_X) < unit / 2 + EXIT_W
             if kin in ('fire', 'step') and L >= 40 and (front or rng.rand() < 0.85) and not at_exit:     # no sandbag scraps on corner stubs
@@ -409,7 +447,7 @@ for s in (-1, 1):
         else:
             ya = p0[1] - n[1] * 4 if n[1] > 0 else p0[1]; yb = p0[1] if n[1] > 0 else p0[1] - n[1] * 4
             box = (cx0, ya, cx1, yb)
-        boxes = [box]
+        boxes = [] if portal_wall else [box]
         if abs(n[1]) > 0.5 and abs(p0[1] - EXIT_Y) < 8 and box[0] < EXIT_X < box[2]:      # gap over the skirmish ladder
             boxes = [b_ for b_ in ((box[0], box[1], EXIT_X - EXIT_W, box[3]), (EXIT_X + EXIT_W, box[1], box[2], box[3])) if b_[2] - b_[0] > 1]
         for (bx0, by0, bx1, by1) in boxes:
@@ -985,6 +1023,112 @@ def banner_png():
         '\tTextureColor "materials/tw/briefing_banner_color.png"\n\tg_vColorTint "[1.000000 1.000000 1.000000 0.000000]"\n}\n')
 banner_png()
 
+# ---------------------------------------------------------------- mine tunnels: one closed mesh (floor / roof heightfields + walls), timber sets,
+# duckboards, lamps, the mine chamber in the middle where both sides' galleries meet (own rng: nothing above shifts)
+TN = np.random.RandomState(1915)
+T_FLOOR = MATS['mud_wet']; T_WALL = MATS['dirt2']; T_ROOF = 'materials/de_train/hr_train_s2/wood/hrts2_wood_floor_boards_02_wet.vmat'
+for m_ in (T_FLOOR, T_WALL): vmesh.TEX_SIZE[m_] = (1024, 1024)
+vmesh.TEX_SIZE[T_ROOF] = (1024, 512)
+c_ = LY.TUN_CELL
+gx = np.arange(-1712.0, 1712.0 + 1, c_); gy = np.arange(-3536.0, LY.TUN_PORTAL_Y + 1, c_)
+nxc, nyc = len(gx) - 1, len(gy) - 1
+occ = np.zeros((nxc, nyc), bool)
+for i in range(nxc):
+    for j in range(nyc):
+        occ[i, j] = tun_in((gx[i] + gx[i + 1]) / 2, (gy[j] + gy[j + 1]) / 2) is not None
+FZ = np.zeros((nxc + 1, nyc + 1)); CZ = np.zeros((nxc + 1, nyc + 1))
+used_v = np.zeros((nxc + 1, nyc + 1), bool)
+for i, j in zip(*np.nonzero(occ)):
+    used_v[i:i + 2, j:j + 2] = True
+for i, j in zip(*np.nonzero(used_v)):
+    FZ[i, j] = tun_floor(gx[i], gy[j]); CZ[i, j] = tun_ceil(gx[i], gy[j])
+vid = {}; tverts = []
+def V(i, j, top):
+    k = (i, j, top)
+    if k not in vid: vid[k] = len(tverts); tverts.append((gx[i], gy[j], CZ[i, j] if top else FZ[i, j]))
+    return vid[k]
+tfaces, tmats = [], []
+def portal_edge(i, j, side):
+    if side != 'y+' or j + 1 != nyc: return False
+    xm = (gx[i] + gx[i + 1]) / 2
+    return LY.TUN_SAP_X[0] < abs(xm) < LY.TUN_SAP_X[1]
+for i, j in zip(*np.nonzero(occ)):
+    tfaces.append([V(i, j, 0), V(i + 1, j, 0), V(i + 1, j + 1, 0), V(i, j + 1, 0)]); tmats.append(T_FLOOR)
+    tfaces.append([V(i, j, 1), V(i, j + 1, 1), V(i + 1, j + 1, 1), V(i + 1, j, 1)]); tmats.append(T_ROOF)
+    for (a_, b_, side, ni, nj) in (((i, j), (i + 1, j), 'y-', i, j - 1), ((i + 1, j), (i + 1, j + 1), 'x+', i + 1, j),
+                                   ((i + 1, j + 1), (i, j + 1), 'y+', i, j + 1), ((i, j + 1), (i, j), 'x-', i - 1, j)):
+        if 0 <= ni < nxc and 0 <= nj < nyc and occ[ni, nj]: continue
+        if portal_edge(i, j, side): continue
+        tfaces.append([V(b_[0], b_[1], 0), V(a_[0], a_[1], 0), V(a_[0], a_[1], 1), V(b_[0], b_[1], 1)]); tmats.append(T_WALL)
+vmesh.mesh_node(vmesh.polymesh_open(tverts, tfaces, tmats), GROUP, bake=True, shadows=True)
+print('mine tunnels: %d cells, %d faces' % (occ.sum(), len(tfaces)))
+
+def tun_runs():
+    """centre lines of the narrow passages: (x0, y0, x1, y1, width) along their long axis"""
+    for (x0, y0, x1, y1, k) in TUN:
+        if k in ('chamber', 'landing'): continue
+        if (x1 - x0) >= (y1 - y0): yield ((x0, (y0 + y1) / 2), (x1, (y0 + y1) / 2), y1 - y0, k)
+        else: yield (((x0 + x1) / 2, y0), ((x0 + x1) / 2, y1), x1 - x0, k)
+# clear the trench dressing in front of the sap portals
+for c in list(vmaplib.new_children):
+    if c.type != 'CMapEntity' or c.get('entity_properties').get('classname') != 'prop_static': continue
+    m_ = c.get('entity_properties').get('model') or ''; o = c.get('origin')
+    if LY.TUN_SAP_X[0] - 12 < abs(o[0]) < LY.TUN_SAP_X[1] + 12 and LY.TUN_PORTAL_Y - 70 < o[1] < LY.TUN_PORTAL_Y + 96 and not any(k_ in m_ for k_ in ('revet_', 'firestep', 'duckboard', 'sandbag_', 'shelter')):
+        vmaplib.new_children.remove(c)
+nsets = nlamp = 0
+for (A, B, w, k) in tun_runs():
+    L_ = math.hypot(B[0] - A[0], B[1] - A[1]); ux, uy = (B[0] - A[0]) / L_, (B[1] - A[1]) / L_
+    yaw = math.degrees(math.atan2(uy, ux))
+    t_ = 24.0 if k != 'sap' else 40.0
+    while t_ < L_ - 16:
+        x_, y_ = A[0] + ux * t_, A[1] + uy * t_
+        f_, cz_ = tun_floor(x_, y_), tun_ceil(x_, y_)
+        prop('tunnel_set', x_, y_, f_, yaw + TN.uniform(-2, 2), roll=TN.uniform(-1.5, 1.5), scale=(1, w / 80.0, max(0.6, (cz_ - f_) / 92.0)), reg=False)
+        nsets += 1
+        t_ += 48.0 + TN.uniform(-4, 4)
+    if k in ('gallery', 'cross'):          # duckboards down the middle
+        t_ = 64.0
+        while t_ < L_ - 64:
+            x_, y_ = A[0] + ux * t_, A[1] + uy * t_
+            prop('duckboard_128', x_, y_, tun_floor(x_, y_) + 0.5, yaw + TN.uniform(-1.5, 1.5), reg=False)
+            t_ += 128.0
+    t_ = 100.0
+    while t_ < L_ - 40:                    # lamps hung under the caps
+        x_, y_ = A[0] + ux * t_, A[1] + uy * t_
+        cz_ = tun_ceil(x_, y_)
+        ent('light_omni2', (x_, y_, cz_ - 16), (90, 0, 0), group=GROUP, brightness_units='1', brightness_lumens='380', brightness='1',
+            color='255 184 110', range='300', directlight='3', castshadows='1', colormode='0', enabled='1', bouncescale='1.0', shape='0')
+        nlamp += 1
+        t_ += 230.0 + TN.uniform(-20, 20)
+# the landings at the foot of each sap: winding gear, spoil, timber, tools; the listening posts; the charge in the mine chamber
+def tprop(name, x, y, yaw=None, dz=0.0, stock=None, solid='6'):
+    return prop(name, x, y, tun_floor(x, y) + dz, TN.uniform(0, 360) if yaw is None else yaw, stock=stock, solid=solid, check=True, pad=2.0)
+for s in (-1, 1):
+    for (nm, x, y, yaw) in (('tl_bagpile', 1690, -3340, 0), ('tl_bagpile', 1660, -3348, 10), ('tl_planks', 1556, -3250, 90), ('tl_tools', 1700, -3260, 0),
+                            ('tl_bucket', 1670, -3250, None), ('crate_long' if s > 0 else 'crate_german', 1560, -3345, 0), ('tl_wirereel', 1600, -3346, 0)):
+        tprop(nm, s * x, y, None if yaw is None else (yaw if s > 0 else 180 - yaw))
+    for (x, y) in ((1024, -3200), (464, -3512)):           # listening posts: a bench and a telephone
+        tprop('tl_bench', s * x, y, 0 if s > 0 else 180)
+        tprop(None, s * (x + 14), y + 4, 90, dz=18.0, stock=EXT('field_telephone'))
+        ent('light_omni2', (s * x, y, tun_ceil(s * x, y) - 18), (90, 0, 0), group=GROUP, brightness_units='1', brightness_lumens='160', brightness='1',
+            color='255 170 96', range='160', directlight='3', castshadows='1', colormode='0', enabled='1', bouncescale='1.0', shape='0')
+    for (x, y) in ((1620, -3300), (900, -3270)):
+        tprop('tl_lantern', s * x, y)
+    wall_sign('sign_sap_gb' if s > 0 else 'sign_sap_de', 1641, -2850)
+    # portal: a heavier set framing the opening
+    fl_ = tun_floor(s * 1648, LY.TUN_PORTAL_Y - 6)
+    prop('tunnel_set', s * 1648, LY.TUN_PORTAL_Y - 6, fl_, 90, scale=(1.3, 1.2, max(0.6, (tun_ceil(s * 1648, LY.TUN_PORTAL_Y - 6) - fl_) / 92.0)), reg=False)
+# the mine chamber: tamped charge of ammonal boxes, sandbag tamping, the firing cable and the officer's table
+for (nm, x, y, yaw, dz) in (('crate_shells', -24, -3380, 0, 0), ('crate_shells', 24, -3380, 0, 0), ('crate_shells', 0, -3380, 0, 12.6),
+                            ('crate_shells', -24, -3352, 0, 0), ('crate_shells', 24, -3352, 0, 0), ('crate_shells', 0, -3352, 0, 12.6),
+                            ('sandbag_low', 0, -3420, 0, 0), ('sandbag_low', 0, -3312, 0, 0), ('tl_wirereel', -110, -3470, 90, 0), ('tl_wirereel', 110, -3260, 90, 0)):
+    prop(nm, x, y, tun_floor(x, y) + dz, yaw, check=True, pad=1.0)
+for (x, y) in ((-120, -3360), (120, -3360), (0, -3500), (0, -3230)):
+    ent('light_omni2', (x, y, tun_ceil(x, y) - 18), (90, 0, 0), group=GROUP, brightness_units='1', brightness_lumens='420', brightness='1',
+        color='255 180 104', range='320', directlight='3', castshadows='1', colormode='0', enabled='1', bouncescale='1.0', shape='0')
+clone('env_combined_light_probe_volume', (0, -3216, -200), box_mins='-1760 -340 -90', box_maxs='1760 340 120', voxel_size='32.0', targetname='tunnel_probe')
+print('mine tunnels: %d timber sets, %d lamps' % (nsets, nlamp))
+
 # ---------------------------------------------------------------- woods skirmish: a ladder out of the north end of each fire trench,
 # a fenced track through the shell-holes and a fenced clearing in the wood where both sides meet (own rng: nothing above shifts)
 SK = np.random.RandomState(1918)
@@ -1149,6 +1293,20 @@ for c in kids[2]:
             continue
     kept.append(c)
 newc = [c for c in vmaplib.new_children if not SKIP_SIGS or obj_sig(c) not in SKIP_SIGS]
+# user copies that the generator now reproduces itself (their edit was adopted into the rules) are dropped
+def _ek(c):
+    ep = c.get('entity_properties'); return (ep.get('classname') or '', ep.get('model') or '')
+_gen_idx = {}
+for c in newc:
+    if c.type == 'CMapEntity': _gen_idx.setdefault(_ek(c), []).append(c)
+_adopt = 0
+for c in list(kept):
+    if c.get('customVisGroup', '') != USER_GROUP or c.type != 'CMapEntity': continue
+    o = np.array(c.get('origin')); an = c.get('angles')
+    for g_ in _gen_idx.get(_ek(c), ()):
+        if np.abs(np.array(g_.get('origin')) - o).max() < 12 and max(abs(((p - q) + 180) % 360 - 180) for p, q in zip(an, g_.get('angles'))) < 8:
+            kept.remove(c); _adopt += 1; break
+print('user edits now produced by the generator (user copy dropped): %d' % _adopt)
 print('skipped %d generated objects the user replaced' % (len(vmaplib.new_children) - len(newc)))
 kids[2] = kept + newc
 counts = {}

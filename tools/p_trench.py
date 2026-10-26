@@ -164,6 +164,24 @@ def ladder(lod=0, seed=0, length=110):
     return m
 
 
+def tunnel_set(lod=0, seed=0, width=80.0, height=92.0):
+    """mine-gallery timber set: two round props under a squared cap, a sill, and a few lagging boards over the cap (gallery runs along x)"""
+    rng = np.random.RandomState(seed)
+    m = geo.Mesh()
+    sides = 9 if lod == 0 else 5
+    for s in (-1, 1):
+        y = s * (width / 2 - 4.5)
+        m.add(geo.tube([(rng.uniform(-0.6, 0.6), y, -2), (rng.uniform(-0.6, 0.6), y + s * rng.uniform(-0.8, 0.4), height - 7)], [4.2, 3.9], sides=sides,
+                       mat='bark', part=geo.frame(seed=seed + s)))
+    m.add(geo.plank(width + 4, 7.5, 7.0, mat='wood', seg=1, div=(4, 1, 1), warp=0.6, seed=seed + 7, R=geo.euler(0, 0, 90), t=(0, 0, height - 3.5), tone=rng.rand()))
+    m.add(geo.plank(width - 2, 5.0, 3.0, mat='wood', seg=1, div=(3, 1, 1), warp=0.3, seed=seed + 8, R=geo.euler(0, 0, 90), t=(0, 0, 0.5), tone=rng.rand()))
+    if lod == 0:
+        for k in range(3):
+            m.add(geo.plank(22, 9.0, 1.4, mat='wood', seg=1, div=(2, 1, 1), warp=0.3, seed=seed + 20 + k,
+                            t=(rng.uniform(-3, 3), -width / 3 + k * width / 3, height + 0.8), tone=rng.rand()))
+    return m
+
+
 def shelter(lod=0, seed=0):
     """elephant-iron shelter: corrugated half-arch, length along x (96), opening at -x, earth/sandbags over"""
     import p_sandbag
@@ -259,6 +277,9 @@ def specs():
     out['duckboard'] = dict(lods=[duckboard(0, 1), duckboard(1, 1)], size=512, ground=0.0, shaders={'wood': W_DUCK}, surface='wood',
                             hulls=[np.array([[x, y, z] for x in (-32, 32) for y in (-11, 11) for z in (0, 4.2)])])
     out['ladder'] = dict(lods=[ladder(0, 2)], size=512, ground=0.0, shaders={'wood': S.wood}, surface='wood', hulls=[])
+    out['tunnel_set'] = dict(lods=[tunnel_set(0, 3), tunnel_set(1, 3)], size=512, ground=0.0, shaders={'wood': S.wood, 'bark': S.bark}, surface='wood',
+                             stock={'wood': ['boards', 'boards_dark'], 'bark': 'bark'},
+                             hulls=[np.array([[x, y, z] for x in (-4, 4) for y in (s * 31, s * 40) for z in (0, 88)]) for s in (-1, 1)])
     out['shelter'] = dict(lods=[shelter(0, 4), shelter(1, 4)], size=2048, ground=0.0, metal=True,
                           shaders={'wood': S.wood, 'earth': S.earth, 'galv': S.galvanised, 'burlap': S.burlap}, surface='dirt',
                           hulls=[])

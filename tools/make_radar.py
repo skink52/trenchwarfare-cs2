@@ -271,6 +271,7 @@ south = [(EXIT_X - W_, EXIT_Y), (EXIT_X - W_, EXIT_Y + 70), (B_[0] - 40, B_[1] -
 mir = lambda P_: [(-p[0], p[1]) for p in P_]
 outline = ct + mir(ct)[::-1][1:] + mir(south) + south[::-1][1:]
 dpl.polygon([px(*p) for p in outline], fill=255)
+for (x0, y0, x1, y1, k) in LY.tunnels(): dpl.rectangle([px(x0 - 20, y1 + 20), px(x1 + 20, y0 - 20)], fill=255)
 play = play.filter(ImageFilter.GaussianBlur(plen(40)))
 pm = np.asarray(play, np.float32)[..., None] / 255.0
 o = np.asarray(out, np.float32)[..., :3]
@@ -292,6 +293,38 @@ for s in (-1, 1):       # exit ladders
     for k in (-1, 0, 1):
         dr.line([(p[0] + plen(10) * k, p[1] - plen(8)), (p[0] + plen(10) * k, p[1] + plen(8))], fill=(70, 58, 44, 255), width=2)
 
+# mine galleries: translucent dark band with a dashed timber edge, lamps as warm dots
+tl = Image.new('RGBA', (M, M), (0, 0, 0, 0)); dtl = ImageDraw.Draw(tl)
+for (x0, y0, x1, y1, k) in LY.tunnels():
+    dtl.rectangle([px(x0, y1), px(x1, y0)], fill=(28, 20, 14, 150))
+out = Image.alpha_composite(out, tl); dr = ImageDraw.Draw(out)
+def dash(a_, b_, col, w, step=36):
+    Lseg = math.hypot(b_[0] - a_[0], b_[1] - a_[1]); n = max(1, int(Lseg / step))
+    for k in range(0, n, 2):
+        t0, t1 = k / n, (k + 1) / n
+        dr.line([px(a_[0] + (b_[0] - a_[0]) * t0, a_[1] + (b_[1] - a_[1]) * t0),
+                 px(a_[0] + (b_[0] - a_[0]) * t1, a_[1] + (b_[1] - a_[1]) * t1)], fill=col, width=w)
+TR = LY.tunnels()
+def inside(x, y): return any(x0 - 1 < x < x1 + 1 and y0 - 1 < y < y1 + 1 for (x0, y0, x1, y1, _) in TR)
+for (x0, y0, x1, y1, k) in TR:
+    for a_, b_, nx, ny in (((x0, y0), (x1, y0), 0, -1), ((x1, y0), (x1, y1), 1, 0), ((x1, y1), (x0, y1), 0, 1), ((x0, y1), (x0, y0), -1, 0)):
+        L = math.hypot(b_[0] - a_[0], b_[1] - a_[1]); n = max(1, int(L / 16)); seg = None
+        for i in range(n):
+            mx = a_[0] + (b_[0] - a_[0]) * (i + 0.5) / n; my = a_[1] + (b_[1] - a_[1]) * (i + 0.5) / n
+            open_ = inside(mx + nx * 8, my + ny * 8) or (k == 'sap' and ny == 1)
+            p = (a_[0] + (b_[0] - a_[0]) * i / n, a_[1] + (b_[1] - a_[1]) * i / n)
+            if not open_ and seg is None: seg = p
+            if open_ and seg is not None: dash(seg, p, (196, 158, 104, 235), 2); seg = None
+        if seg is not None: dash(seg, b_, (196, 158, 104, 235), 2)
+for (x0, y0, x1, y1, k) in TR:
+    if k in ('gallery', 'cross'):
+        L = max(x1 - x0, y1 - y0); n = int(L // 230) + 1
+        for i in range(n):
+            f = (i + 0.5) / n
+            x = x0 + (x1 - x0) * f if x1 - x0 > y1 - y0 else (x0 + x1) / 2
+            y = (y0 + y1) / 2 if x1 - x0 > y1 - y0 else y0 + (y1 - y0) * f
+            q = px(x, y); r = plen(9); dr.ellipse([q[0] - r, q[1] - r, q[0] + r, q[1] + r], fill=(255, 196, 110, 210))
+
 # ---------------------------------------------------------------- lettering, compass, frame
 def label(text, x, y, size, col=(232, 220, 186), alpha=200, rot=0, spacing=0.18, font='/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf'):
     f = ImageFont.truetype(font, int(size * SS))
@@ -310,6 +343,7 @@ label("NO MAN'S LAND", 0, 0, 30, alpha=150, rot=90, spacing=0.5)
 label('GERMAN LINES', -2620, -3330, 24, col=(222, 196, 170), alpha=190)
 label('BRITISH LINES', 2620, -3330, 24, col=(214, 214, 186), alpha=190)
 label('THE WOOD', 0, 3950, 26, alpha=200, spacing=0.35)
+label('MINE GALLERIES', 0, -3680, 13, alpha=180, font='/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf')
 label('MINENWERFER', -LY.MORTAR_X, 1980, 17, alpha=170)
 label('TRENCH MORTARS', LY.MORTAR_X, 1980, 17, alpha=170)
 label('FLIEGERABTEILUNG', -5650, -1330, 17, alpha=180)

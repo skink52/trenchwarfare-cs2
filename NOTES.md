@@ -126,6 +126,13 @@ Done this session (since the first delivery):
   Packaging: stale prop textures removed (only files referenced by vmdl remaps / vmats kept). Detail pass 1: trench clutter, flooded
   trench stretches, NML metal debris, airfield stores.
 
+- tw9 (26 Oct): mine tunnels under the south (rear) ends of both trenches (`LY.tunnels()`, mirrored). Sap from each trench's
+  south end ramps from the trench floor to z -260, landing, two parallel galleries + cross-cuts, listening posts, centre charge chamber
+  (shell crates). Closed 16-u grid mesh (mud_wet floor, board roof, dirt2 walls), terrain cells over the sap cut by corner height
+  (parapet layer covers the opening), revet/sandbags/clip skipped at the portal. Dressing: tunnel_set timber every 48, duckboards,
+  26 lamps (light_omni2), sap signs `sign_sap_gb/de`, tunnel_probe. Radar shows galleries (dark band, dashed timber edge, lamp dots).
+  Generated output kept as out/gen_tw9.vmap (pass as argv[4] next time with the user's newest vmap as argv[1]).
+
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
 - Done 03:12: shelter candles + baked warm light, wreck/crater smoke, distant smoke columns, damaged-plane smoke (HP <= 45).
