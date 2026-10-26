@@ -199,6 +199,11 @@ Done this session (since the first delivery):
 - tw23: plank revetments jumped on LOD swap: p_trench.revetment_planks spaced planks with a LOD-dependent gap (x0.5 in LOD1), so
   LOD1 planks sat lower. Gap now identical in every LOD; the 6 plank revet models rebuilt (bounds LOD0 vs LOD1 within 0.4 u).
 
+- tw24: LOD pops still very noticeable. Measured LOD0-vs-LOD1 shape deviation for every prop (p95 of nearest-surface distance):
+  shattered trees 20-48 u, tunnel_set 10, hangar 9, stumps 7-8, log 6, shelter/wire_coil/wreck_tank ~2 -> these ship LOD0 only
+  (modelio.SINGLE_LOD). Everything else (revets ~1.2-1.7, sandbags ~0.7, crates ~0.1) keeps LOD1 but LOD_SCALE is now 16
+  (thresholds 192-480). Existing vmdls patched in place. Proper fix later: derive LOD1 from LOD0 (decimation) instead of a second generation.
+
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
 - Done 03:12: shelter candles + baked warm light, wreck/crater smoke, distant smoke columns, damaged-plane smoke (HP <= 45).

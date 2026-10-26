@@ -84,11 +84,15 @@ def _filter():
     return 'import_filter =\n{\nexclude_by_default = false\nexception_list = [  ]\n}'
 
 
-LOD_SCALE = 4.0          # LOD switches 4x further out than the per-prop values (playtest: swaps visible at ~300 units)
+LOD_SCALE = 16.0         # LOD switches 16x further out than the per-prop values (playtest: swaps visible at ~300 units, then still noticeable at 4x)
+# props whose low LOD is not a faithful copy of LOD0 (generated separately; measured p95 shape deviation > 2 units): ship LOD0 only
+SINGLE_LOD = {'tree_shattered_a', 'tree_shattered_b', 'tree_shattered_c', 'tree_shattered_d', 'tunnel_set', 'hangar', 'stump_a', 'stump_b',
+              'log_fallen', 'shelter', 'wire_coil', 'wreck_tank'}
 
 
 def vmdl_text(name, rel_dir, meshes, remaps, hulls, surface='default', lod_thresholds=None, archetype='static_prop_model', entity='prop_static'):
     """meshes: list of mesh names (files <rel_dir>/<mesh>.smd), LOD order; remaps: [(from, to)]"""
+    if name in SINGLE_LOD: meshes = meshes[:1]
     T = '\t'
     out = []
     out.append('<!-- kv3 encoding:text:version{e21c7f3c-8a33-41c5-9977-a76d3a32aa0d} format:modeldoc41:version{12fc9d44-453a-4ae4-b4d9-7e2ac0bbd4e0} -->')
