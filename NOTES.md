@@ -157,6 +157,10 @@ Done this session (since the first delivery):
   15 ground patches). `!agents` toggles SetModel agents (suspect for oversized first-person weapons). Weapons: copy bat
   `copy_ww1_weapons_mg_trenchwarfare.bat` brings weapons.vdata + models/materials ww1 from the testing addon.
 
+- tw14: giant first-person weapon (stock AWP too, !agents made no difference) - suspect hidePawn's SetColor on every reset (render mode
+  change draws the local third-person body/weapon). hidePawn now only scales, and only un-hides a pawn it hid. testing weapons.vdata
+  needs no edits for this addon (same model paths; loadout classes match the map script).
+
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
 - Done 03:12: shelter candles + baked warm light, wreck/crater smoke, distant smoke columns, damaged-plane smoke (HP <= 45).

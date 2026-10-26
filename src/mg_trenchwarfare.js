@@ -404,9 +404,13 @@ function endFlight(p, pawn, crashed) {
     hidePawn(pawn, false);
   }
 }
+// the pilot rides inside the aircraft model: shrink the pawn rather than touching its render colour/alpha (changing the render
+// mode made the local player's own third-person body and weapon draw in first person)
 function hidePawn(pawn, hide) {
+  const p = players.get(slotOfPawn(pawn));
+  if (!hide && p && !p.hidden) return;
   try { pawn.SetModelScale(hide ? 0.02 : 1); } catch (e) {}
-  try { pawn.SetColor({ r: 255, g: 255, b: 255, a: hide ? 0 : 255 }); } catch (e) {}
+  if (p) p.hidden = hide;
 }
 function placePlane(p, pawn, snap) {
   const a = p.air, A = CONFIG.AIR, f = a.f;
