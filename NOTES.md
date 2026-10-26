@@ -145,6 +145,10 @@ Done this session (since the first delivery):
   (`toolslightmapres.vmat`): one closed shell on a 64 grid over the walkable band (trench floors to parapet +128, NML, skirmish outline,
   mortar pits), a box per tunnel rect, the lobby. Generated output: out/gen_tw11.vmap.
 
+- tw12 (26 Oct, from the user's 14:46 vmap): bake charting stalled on "26669 unique meshes" (every prop forced bakelighting=1, x LODs).
+  Now foliage, wire and props < 40 u are light-probed (bakelighting 0, `probed()`): 3356 probed / 2752 lightmapped. Far probe strips
+  (`far_probe_N`, voxel 108, z -140..900) around bf_probe cover the outer forest; aerodrome probes extended down to the ground.
+
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
 - Done 03:12: shelter candles + baked warm light, wreck/crater smoke, distant smoke columns, damaged-plane smoke (HP <= 45).

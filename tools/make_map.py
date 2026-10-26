@@ -362,6 +362,13 @@ for _c in world.get('children'):          # the user's own placements are obstac
     if _c.get('customVisGroup', '') == USER_GROUP and _c.type == 'CMapEntity' and (_c.get('entity_properties').get('model') or '').endswith('.vmdl'):
         _o = _c.get('origin'); PL.add(PL.footprint(_c.get('entity_properties').get('model'), _o[0], _o[1], _o[2], _c.get('angles')[1], tuple(_c.get('scales')), 0.0))
 skipped = {}
+PROBED_KEYS = ('tree', 'poplar', 'beech', 'maple', 'bush', 'shrub', 'dogwood', 'weed', 'grass', 'leaves', 'viburnum', 'fern', 'ivy',
+               'wire_', 'cheval')
+def probed(model, scale):
+    """foliage, wire and small clutter are light-probed: they would add thousands of lightmap charts (bake charting time) for little gain"""
+    if any(k in model for k in PROBED_KEYS): return True
+    lo, hi = placer.bounds(model)
+    return max((hi[i] - lo[i]) * abs(scale[i]) for i in range(3)) < 40.0
 def prop(name, x, y, z, yaw=0.0, pitch=0.0, roll=0.0, scale=(1, 1, 1), stock=None, solid='6', shadows='0', reg=True, check=False, pad=0.0, **kw):
     """reg: record the footprint; check: only place if it touches nothing already recorded (returns None when skipped)"""
     model = stock or 'models/tw/%s/%s.vmdl' % (name, name)
@@ -372,7 +379,7 @@ def prop(name, x, y, z, yaw=0.0, pitch=0.0, roll=0.0, scale=(1, 1, 1), stock=Non
             return None
         if reg: PL.add(f)
     e = ent('prop_static', (x, y, z), (pitch, yaw, roll), group=GROUP, model=model, rendercolor='255 255 255', skin='default',
-            solid=solid, bakelighting='1', disableshadows=shadows, lodlevel='-1', baketoworld='0', rendertocubemaps='1', **kw)
+            solid=solid, bakelighting='0' if probed(model, scale) else '1', disableshadows=shadows, lodlevel='-1', baketoworld='0', rendertocubemaps='1', **kw)
     if tuple(scale) != (1, 1, 1): setscale(e, scale)
     props_placed[model] = props_placed.get(model, 0) + 1
     return e
@@ -964,8 +971,17 @@ ent('env_volumetric_fog_controller', (192, 0, 2000), group=GROUP, targetname='tw
 clone('post_processing_volume', (256, 0, 2000), postprocessing='postprocess/%s.vpost' % NAME, master='1', minexposure='0.6', maxexposure='1.8',
       enableexposure='1', fadetime='1.0', spawnflags='4097')
 clone('env_combined_light_probe_volume', (0, 0, 120), box_mins='-3900 -3700 -260', box_maxs='3900 4500 520', voxel_size='64.0', targetname='bf_probe')
+# coarse probes for the light-probed trees and clutter outside the battlefield (strips around bf_probe, gaps for the aerodrome probes)
+_far = [(-3900, -6300, 3900, -3700), (-3900, 4500, 3900, 6300)]
+for s_ in (-1, 1):
+    xa, xb = sorted((s_ * 3900, s_ * 7300)); ha, hb = sorted((s_ * (LY.HANGAR_X - 700), s_ * (LY.HANGAR_X + 700)))
+    _far += [(xa, -6300, xb, -800), (xa, 800, xb, 6300), (xa, -800, ha, 800), (hb, -800, xb, 800)]
+for k_, (x0, y0, x1, y1) in enumerate(_far):
+    if x1 - x0 < 50: continue
+    clone('env_combined_light_probe_volume', ((x0 + x1) / 2, (y0 + y1) / 2, 380), box_mins='%g %g -520' % (-(x1 - x0) / 2, -(y1 - y0) / 2),
+          box_maxs='%g %g 520' % ((x1 - x0) / 2, (y1 - y0) / 2), voxel_size='108.0', targetname='far_probe_%d' % k_)
 for s in (-1, 1):
-    clone('env_combined_light_probe_volume', (s * LY.HANGAR_X, 0, 200), box_mins='-700 -800 -120', box_maxs='700 800 420', voxel_size='64.0',
+    clone('env_combined_light_probe_volume', (s * LY.HANGAR_X, 0, 200), box_mins='-700 -800 -260', box_maxs='700 800 420', voxel_size='64.0',
           targetname='air_probe_%d' % (s + 1))
 clone('env_soundscape', (0, 0, 300), radius='12000', soundscape='Nothing', enablesoundevent='1', soundevent='tw.amb.front')
 
