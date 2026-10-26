@@ -50,7 +50,7 @@ def revetment_planks(lod=0, seed=0, damaged=False, length=64):
             p = geo.plank(L, w, 1.2, mat='wood', r=0.4, seg=1, div=(int(length / 16) if lod == 0 else 2, 1, 1), warp=0.5, seed=seed * 100 + k,
                           R=geo.euler(rng.uniform(-0.5, 0.5), 0, 90 + rng.uniform(-2, 2)), t=(rng.uniform(-1, 1), 1.4 + rng.uniform(-0.3, 0.3), z + w / 2), tone=rng.rand())
         m.add(p)
-        z += w + rng.uniform(0.0, 0.9) * (1 if lod == 0 else 0.5)
+        z += w + rng.uniform(0.0, 0.9)                     # same in every LOD, or the planks jump when the LOD swaps
         k += 1
     pxs = (-21, 23) if length <= 64 else (-44, 0, 46)
     for j, x in enumerate(pxs):

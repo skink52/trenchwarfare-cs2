@@ -196,6 +196,9 @@ Done this session (since the first delivery):
 - tw22: LOD pops visible at ~300 u: all LOD switch thresholds x4 (modelio.LOD_SCALE = 4 applied to every prop's lod_thresholds;
   the 54 existing vmdls patched in place: 12->48, 20->80, 25->100, 30->120, 60->240). Stock Valve foliage keeps its own LODs.
 
+- tw23: plank revetments jumped on LOD swap: p_trench.revetment_planks spaced planks with a LOD-dependent gap (x0.5 in LOD1), so
+  LOD1 planks sat lower. Gap now identical in every LOD; the 6 plank revet models rebuilt (bounds LOD0 vs LOD1 within 0.4 u).
+
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
 - Done 03:12: shelter candles + baked warm light, wreck/crater smoke, distant smoke columns, damaged-plane smoke (HP <= 45).
