@@ -35,7 +35,7 @@ const CONFIG = {
   INF_ARMOR: 50,
   HEAL_RADIUS: 120, HEAL_HP_PER_S: 12, HEAL_ARMOR_PER_S: 25,
   STATION_RADIUS: 72,
-  TARGET_EXT: 3600,                    // targeting map covers x, y in [-EXT, EXT]
+  TARGET_EXT: 4600,                    // targeting map covers x, y in [-EXT, EXT] (render_top.py EXT); includes the wood
   TARGET_STEPS: 192,
   SIGHT_SPEED: 60, SIGHT_FINE: 14,     // steps per second
   SHELL_RADIUS: 330, SHELL_DAMAGE: 170, TRENCH_COVER: 0.35,
@@ -111,7 +111,8 @@ function loadPoints() {
       return { ent: e, park, parkAng: e.GetAbsAngles(), pilot: -1, void: v3(park.x, park.y, -3600), ti: 0, si: 0,
                bombEnts: [1, 2].map(k => ent("tw_bomb_" + n + "_" + k)).filter(x => x),
                tracerEnts: [1, 2, 3, 4, 5, 6].map(k => ent("tw_tracer_" + n + "_" + k)).filter(x => x),
-               bsight: ent("tw_bombsight_" + n), gsight: ent("tw_gunsight_" + n) };
+               bsight: ent("tw_bombsight_" + n), gsight: ent("tw_gunsight_" + n), spin: 0,
+               prop: ent("tw_prop_" + n), hub: undefined };
     });
     points.pit[team] = []; points.seatA[team] = []; points.seatB[team] = [];
     for (let k = 1; k <= CONFIG.CREWS; k++) {
@@ -124,6 +125,12 @@ function loadPoints() {
     }
   }
   const n = (o) => o[T].length + "/" + o[CT].length;
+  for (const team of [T, CT]) for (const a of points.aircraft[team]) {
+    if (!a.prop) continue;
+    const w = a.prop.GetAbsOrigin(), y = a.parkAng.yaw * Math.PI / 180, dx = w.x - a.park.x, dy = w.y - a.park.y;
+    a.hub = v3(dx * Math.cos(y) + dy * Math.sin(y), -dx * Math.sin(y) + dy * Math.cos(y), w.z - a.park.z);
+    a.propParkAng = a.prop.GetAbsAngles();
+  }
   Instance.Msg("[tw] points: trench " + n(points.trench) + ", heal " + n(points.heal) + ", plane spawns " + n(points.plane) + ", aircraft " + n(points.aircraft));
 }
 
@@ -381,6 +388,12 @@ function drawSights(a, pawn) {
     else park(ac, ac.bsight);
   }
 }
+// Source AngleVectors: forward / left / up of an entity with these angles
+function angleBasis(ang) {
+  const p = ang.pitch * Math.PI / 180, y = ang.yaw * Math.PI / 180, r = ang.roll * Math.PI / 180;
+  const sp = Math.sin(p), cp = Math.cos(p), sy = Math.sin(y), cy = Math.cos(y), sr = Math.sin(r), cr = Math.cos(r);
+  return { f: v3(cp * cy, cp * sy, -sp), l: v3(sr * sp * cy - cr * sy, sr * sp * sy + cr * cy, sr * cp), u: v3(cr * sp * cy + sr * sy, cr * sp * sy - sr * cy, cr * cp) };
+}
 function dirOf(ang) {
   const p = ang.pitch * Math.PI / 180, y = ang.yaw * Math.PI / 180;
   return v3(Math.cos(p) * Math.cos(y), Math.cos(p) * Math.sin(y), -Math.sin(p));
@@ -433,6 +446,11 @@ function endFlight(p, pawn, crashed) {
     fire("tw_plane_eng_" + a.ac.ent.GetEntityName().slice("tw_plane_".length), "StopSound");
     fire("tw_plane_smoke_" + a.ac.ent.GetEntityName().slice("tw_plane_".length), "Stop");
     a.ac.ent.Teleport({ position: a.ac.park, angles: a.ac.parkAng, velocity: v3(0, 0, 0) });
+    if (a.ac.prop && a.ac.hub) {
+      const y = a.ac.parkAng.yaw * Math.PI / 180, h = a.ac.hub;
+      try { a.ac.prop.Teleport({ position: v3(a.ac.park.x + h.x * Math.cos(y) - h.y * Math.sin(y), a.ac.park.y + h.x * Math.sin(y) + h.y * Math.cos(y), a.ac.park.z + h.z),
+                                 angles: a.ac.propParkAng, velocity: v3(0, 0, 0) }); } catch (e) {}
+    }
   }
   a.ac.pilot = -1;
   park(a.ac, a.ac.gsight); park(a.ac, a.ac.bsight);
@@ -458,6 +476,15 @@ function placePlane(p, pawn, snap) {
   const vel = v3(f.x * a.speed, f.y * a.speed, f.z * a.speed);
   if (snap) a.ac.ent.Teleport({ position: a.pos, angles: ang, velocity: vel });
   else a.ac.ent.Move({ position: a.pos, angles: ang, velocity: vel });
+  const ac = a.ac;
+  if (ac.prop && ac.hub) {
+    ac.spin = (ac.spin + (snap ? 0 : (900 + 1500 * a.throttle) * Math.max(0.005, now() - (a.lastSpin || now())))) % 360;
+    a.lastSpin = now();
+    const Bq = angleBasis(ang), h = ac.hub;
+    const hp = v3(a.pos.x + Bq.f.x * h.x + Bq.l.x * h.y + Bq.u.x * h.z, a.pos.y + Bq.f.y * h.x + Bq.l.y * h.y + Bq.u.y * h.z, a.pos.z + Bq.f.z * h.x + Bq.l.z * h.y + Bq.u.z * h.z);
+    const pa = { pitch: ang.pitch, yaw: ang.yaw, roll: ang.roll + ac.spin };
+    try { if (snap) ac.prop.Teleport({ position: hp, angles: pa, velocity: vel }); else ac.prop.Move({ position: hp, angles: pa, velocity: vel }); } catch (e) {}
+  }
   const B = planeBasis(a);
   const hp = vadd(vadd(a.pos, f, -A.PILOT.back), B.u, A.PILOT.up);
   if (snap) pawn.Teleport({ position: hp, velocity: vel }); else pawn.Move({ position: hp, velocity: vel });

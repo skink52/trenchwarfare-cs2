@@ -176,6 +176,17 @@ Done this session (since the first delivery):
   "PULL UP" warning below 320 u. Mortars: the loader (c.loader, set when loading) deals a non-lethal share first (>= 55 where the victim
   has the health) so CS2 counts an assist; the firer deals the rest and gets the kill.
 
+- tw19: cs_minimap_boundary removed (CS2 drew its own top-down minimap of the lobby from them instead of the radar png).
+- tw20 (from the user's 16:58 vmap): full regeneration reshuffled ~450 generated objects (user edits now act as placer obstacles ->
+  rng cascade), so this delivery is `tools/patch_vmap.py` applied straight onto the user's vmap: removes minimap boundaries, adds the
+  propellers. Propellers: `tools/split_props.py <addon>` splits them out of the weathered plane SMDs (pristine copies in out/ext_full;
+  re-run after weather_ext.py) into plane_X_prop models (origin on the hub, out/prop_hubs.json); tw_prop_<tg> prop_dynamics spun by the
+  script (roll += 900-2400 deg/s with throttle, Source AngleVectors basis for the hub offset), static ones on the hangar planes.
+  Mortar sight map: render_top.py now crops make_radar's unlabelled render (out/radar_clean.png), EXT 4600 (= CONFIG.TARGET_EXT)
+  so the wood is on it. Unpack bat fixed: applied-list lines had a trailing space so findstr /x never matched and every zip from
+  tw7 on was re-extracted on every run; now /b match, (echo x)>>file, loop tw2..tw99.
+  TODO generator: per-section rng so user obstacles don't cascade; until then prefer patch_vmap.py-style deltas on the user's map.
+
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
 - Done 03:12: shelter candles + baked warm light, wreck/crater smoke, distant smoke columns, damaged-plane smoke (HP <= 45).

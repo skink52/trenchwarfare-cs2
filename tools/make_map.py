@@ -770,6 +770,14 @@ for s in (-1, 1):
     prop('sign_mortars_gb' if s > 0 else 'sign_mortars_de', s * (LY.MORTAR_X - 260), -1200, gz(s * (LY.MORTAR_X - 260), -1200), 0 if s > 0 else 180)
 
 # ---------------------------------------------------------------- airfields (biplanes later): hangar, signs, spawn markers
+
+# propellers are separate models (tools/split_props.py) so the script can spin them; hub offsets from out/prop_hubs.json
+PROP_HUB = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'out', 'prop_hubs.json')))
+SK_ = np.random.RandomState(77)
+def hub_at(pl, x, y, z, yaw):
+    hx, hy, hz = PROP_HUB[pl]; c, s_ = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+    return x + hx * c - hy * s_, y + hx * s_ + hy * c, z + hz
+
 for s in (-1, 1):
     hx = s * LY.HANGAR_X
     prop('hangar', hx, 0, gz(hx, 0) - 2, 0 if s > 0 else 180, reg=False)
@@ -779,7 +787,10 @@ for s in (-1, 1):
         prop(['crate_long', 'crate_german', 'crate_shells'][rng.randint(3)], x, y, gz(x, y), rng.uniform(0, 360), check=True, pad=3)
     pl = 'plane_spad7' if s > 0 else 'plane_dr1'
     for j, (px, py) in enumerate(((s * (LY.HANGAR_X + 40), -150), (s * (LY.HANGAR_X - 120), 160))):
-        prop(None, px, py, gz(px, py), (0 if s > 0 else 180) + rng.uniform(-6, 6), stock='models/tw/ext/%s/%s.vmdl' % (pl, pl))
+        yaw_ = (0 if s > 0 else 180) + rng.uniform(-6, 6)
+        prop(None, px, py, gz(px, py), yaw_, stock='models/tw/ext/%s/%s.vmdl' % (pl, pl))
+        hx, hy, hz = hub_at(pl, px, py, gz(px, py), yaw_)
+        prop(None, hx, hy, hz, yaw_, roll=SK_.uniform(0, 180), stock='models/tw/ext/%s/%s_prop.vmdl' % (pl, pl), solid='0', reg=False)
     for j in range(5):
         x, y = s * (LY.HANGAR_X + rng.uniform(-340, 340)), rng.uniform(-280, 280)
         prop(None, x, y, gz(x, y), rng.uniform(0, 360), stock='models/tw/ext/petrol_can/petrol_can.vmdl', check=True, pad=3)
@@ -809,6 +820,11 @@ for s in (-1, 1):
                 fademindist='-1', fademaxdist='0', StartDisabled='0', HoldAnimation='0', RandomAnimation='0')
         props_placed['models/tw/ext/%s/%s.vmdl' % (pl, dyn)] = 1
         tg = '%s_%d' % ('ct' if s > 0 else 't', i + 1)
+        hx, hy, hz = hub_at(pl, px - s * 60, py, gz(px - s * 60, py), 180 if s > 0 else 0)
+        ent('prop_dynamic', (hx, hy, hz), (0, 180 if s > 0 else 0, SK_.uniform(0, 180)), group=GROUP, targetname='tw_prop_' + tg,
+            model='models/tw/ext/%s/%s_prop.vmdl' % (pl, pl), solid='0', rendercolor='255 255 255', skin='default', DefaultAnim='', disableshadows='0',
+            fademindist='-1', fademaxdist='0', StartDisabled='0', HoldAnimation='0', RandomAnimation='0')
+        props_placed['models/tw/ext/%s/%s_prop.vmdl' % (pl, pl)] = 1
         ent('info_particle_system', (px - s * 60, py, gz(px - s * 60, py) + 60), group=GROUP, targetname='tw_plane_smoke_' + tg, parentname='tw_plane_' + tg,
             effect_name='particles/burning_fx/barrel_burning_engine_smoke_dark.vpcf', start_active='0')
         for kind, snd in (('eng', 'tw.plane_engine'), ('gun', 'tw.plane_gun'), ('gun2', 'tw.plane_gun'), ('gun3', 'tw.plane_gun')):
@@ -1021,8 +1037,7 @@ hint((-1280, -3600, -121, 1280, -3150, 460), 8)
 hint((-1280, 2900, -160, 1280, 4500, 420), 3)                 # woods skirmish clearing
 hint((-LW / 2 - 64, -LD / 2 - 64, LZ - 64, LW / 2 + 64, LD / 2 + 64, LZ + LH + 64), 3)
 hint((-SX - 64, -SY - 64, LZ - 128, SX + 64, SY + 64, LY.SKY_Z1 + 64), 9)
-ent('cs_minimap_boundary', (-6800, 6800, 0), group=GROUP)            # = the radar image's corners (make_radar HALF); must agree with the overview txt
-ent('cs_minimap_boundary', (6800, -6800, 0), group=GROUP)
+# no cs_minimap_boundary: with it CS2 renders its own top-down minimap (it showed the lobby) instead of the overview txt + radar png
 
 # ---------------------------------------------------------------- banner and material files
 def banner_png():

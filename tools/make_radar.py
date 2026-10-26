@@ -325,6 +325,7 @@ for (x0, y0, x1, y1, k) in TR:
             y = (y0 + y1) / 2 if x1 - x0 > y1 - y0 else y0 + (y1 - y0) * f
             q = px(x, y); r = plen(9); dr.ellipse([q[0] - r, q[1] - r, q[0] + r, q[1] + r], fill=(255, 196, 110, 210))
 
+out.convert('RGB').save(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'out', 'radar_clean.png'))     # unlabelled, for the mortar sight (render_top.py)
 # ---------------------------------------------------------------- lettering, compass, frame
 def label(text, x, y, size, col=(232, 220, 186), alpha=200, rot=0, spacing=0.18, font='/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf'):
     f = ImageFont.truetype(font, int(size * SS))

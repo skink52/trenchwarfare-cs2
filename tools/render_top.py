@@ -8,7 +8,8 @@ from noise import fbm
 
 OUT = sys.argv[1] if len(sys.argv) > 1 else '../out/addon'
 GAME = sys.argv[2] if len(sys.argv) > 2 else '../out/game'
-EXT = 3600.0                     # targetable square: x, y in [-EXT, EXT]
+EXT = 4600.0                     # targetable square: x, y in [-EXT, EXT] (must match CONFIG.TARGET_EXT); covers the wood
+RADAR_HALF = 6800.0              # make_radar.py's square
 N = 1024
 xs = np.linspace(-EXT, EXT, N); ys = np.linspace(EXT, -EXT, N)      # image rows go from +y down
 X, Y = np.meshgrid(xs, ys)
@@ -51,6 +52,13 @@ for s in (-1, 1):
 base_img = im
 os.makedirs(os.path.join(OUT, 'panorama/images/custom_game/tw'), exist_ok=True)
 base_img.save(os.path.join(os.path.dirname(__file__), '..', 'preview', 'topdown.png'))
+
+# the mortar sight shows the painted radar (forest, wood clearing, tunnels...) cropped to the targetable square
+_rc = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'out', 'radar_clean.png')
+if os.path.exists(_rc):
+    R_ = Image.open(_rc); S_ = R_.size[0]
+    lo = (RADAR_HALF - EXT) / (2 * RADAR_HALF) * S_; hi = (RADAR_HALF + EXT) / (2 * RADAR_HALF) * S_
+    base_img = R_.crop((int(lo), int(lo), int(hi), int(hi))).resize((N, N), Image.LANCZOS)
 
 def digital(img, team):
     """bird's-eye 'digital' look: luminance, edge boost, green phosphor, grid, scanlines; enemy at the top"""
