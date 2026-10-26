@@ -76,7 +76,7 @@ props, waters = [], []
 for c in d.root.get('world').get('children'):
     if c.type == 'CMapEntity':
         ep = c.get('entity_properties')
-        if ep.get('classname') in ('prop_static', 'prop_dynamic'):
+        if ep.get('classname') in ('prop_static', 'prop_dynamic') and c.get('origin')[2] > -1000:     # not the script's parked effects
             props.append((ep.get('model') or '', c.get('origin'), c.get('angles'), c.get('scales')))
     elif c.type == 'CMapMesh':
         md = c.get('meshData'); names = [a[0] for a in md.attrs]
@@ -384,7 +384,7 @@ open(os.path.join(dst, 'mg_trenchwarfare_radar_psd.vtex'), 'w', newline='\n').wr
     '<!-- dmx encoding keyvalues2_noids 1 format vtex 1 -->\n"CDmeVtex"\n{\n\t"m_inputTextureArray" "element_array" \n\t[\n\t\t"CDmeInputTexture"\n\t\t{\n'
     '\t\t\t"m_name" "string" "0"\n\t\t\t"m_fileName" "string" "panorama/images/overheadmaps/mg_trenchwarfare_radar_psd.png"\n\t\t\t"m_colorSpace" "string" "srgb"\n'
     '\t\t\t"m_typeString" "string" "2D"\n\t\t\t"m_imageProcessorArray" "element_array" \n\t\t\t[\n\t\t\t]\n\t\t}\n\t]\n'
-    '\t"m_outputTypeString" "string" "2D"\n\t"m_outputFormat" "string" "BC7"\n\t"m_textureOutputChannelArray" "element_array"\n\t[\n\t\t"CDmeTextureOutputChannel"\n\t\t{\n'
+    '\t"m_outputTypeString" "string" "2D"\n\t"m_outputFormat" "string" "BC7"\n\t"m_nOutputMinDimension" "int" "0"\n\t"m_nOutputMaxDimension" "int" "1024"\n\t"m_bNoLod" "bool" "1"\n\t"m_textureOutputChannelArray" "element_array"\n\t[\n\t\t"CDmeTextureOutputChannel"\n\t\t{\n'
     '\t\t\t"m_inputTextureArray" "string_array" [ "0" ]\n\t\t\t"m_srcChannels" "string" "rgba"\n\t\t\t"m_dstChannels" "string" "rgba"\n'
     '\t\t\t"m_mipAlgorithm" "CDmeImageProcessor"\n\t\t\t{\n\t\t\t\t"m_algorithm" "string" "Box"\n\t\t\t\t"m_stringArg" "string" ""\n\t\t\t\t"m_vFloat4Arg" "vector4" "0 0 0 0"\n\t\t\t}\n'
     '\t\t\t"m_outputColorSpace" "string" "srgb"\n\t\t}\n\t]\n}\n')

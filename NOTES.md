@@ -170,6 +170,12 @@ Done this session (since the first delivery):
 - tw16/17: agent models removed entirely (SetModel drew the local body/head in first person; user: disable custom agents altogether),
   agent precache props removed. Shelter (dressing station) had no hull: now one convex hull over the earth mound.
 
+- tw18: minimap misaligned - cs_minimap_boundary corners were (-2900,-3500)/(2900,4500) while the radar image/overview txt cover
+  +-6800: boundaries now at the image corners (-6800,6800)/(6800,-6800); radar vtex capped at 1024 (as the validated cs2port radar.py).
+  (Unconfirmed which of the two CS2 reads.) Planes: no automatic pull-up any more - touching the ground/world = crash (kill + explosion),
+  "PULL UP" warning below 320 u. Mortars: the loader (c.loader, set when loading) deals a non-lethal share first (>= 55 where the victim
+  has the health) so CS2 counts an assist; the firer deals the rest and gets the kill.
+
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
 - Done 03:12: shelter candles + baked warm light, wreck/crater smoke, distant smoke columns, damaged-plane smoke (HP <= 45).

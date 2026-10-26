@@ -1021,8 +1021,8 @@ hint((-1280, -3600, -121, 1280, -3150, 460), 8)
 hint((-1280, 2900, -160, 1280, 4500, 420), 3)                 # woods skirmish clearing
 hint((-LW / 2 - 64, -LD / 2 - 64, LZ - 64, LW / 2 + 64, LD / 2 + 64, LZ + LH + 64), 3)
 hint((-SX - 64, -SY - 64, LZ - 128, SX + 64, SY + 64, LY.SKY_Z1 + 64), 9)
-ent('cs_minimap_boundary', (-2900, -3500, 0), group=GROUP)
-ent('cs_minimap_boundary', (2900, 4500, 0), group=GROUP)
+ent('cs_minimap_boundary', (-6800, 6800, 0), group=GROUP)            # = the radar image's corners (make_radar HALF); must agree with the overview txt
+ent('cs_minimap_boundary', (6800, -6800, 0), group=GROUP)
 
 # ---------------------------------------------------------------- banner and material files
 def banner_png():

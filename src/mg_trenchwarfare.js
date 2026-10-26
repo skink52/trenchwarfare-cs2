@@ -143,7 +143,7 @@ const crews = { [T]: [], [CT]: [] };
 function resetCrews() {
   for (const team of [T, CT]) {
     crews[team] = [];
-    for (let k = 0; k < CONFIG.CREWS; k++) crews[team].push({ a: -1, b: -1, loaded: false, target: null, cooldown: 0, impacts: [] });
+    for (let k = 0; k < CONFIG.CREWS; k++) crews[team].push({ a: -1, b: -1, loaded: false, loader: -1, target: null, cooldown: 0, impacts: [] });
   }
 }
 resetCrews();
@@ -496,7 +496,7 @@ function tickAir(p, pawn, dt, pressed, held) {
   if (a.pos.z > A.ALT_MAX) { d = vnorm(v3(d.x, d.y, Math.min(d.z, -0.2))); prompt = "Too high - engine starving"; }
   if (a.speed < A.V_STALL) { d = vnorm(v3(d.x, d.y, Math.min(d.z, -0.5))); prompt = "STALL - nose down"; }
   const gz = groundZ(a.pos.x, a.pos.y);
-  if (a.pos.z - gz < 260 && d.z < 0.15) { d = vnorm(v3(d.x, d.y, 0.15)); if (!prompt) prompt = "PULL UP"; }
+  if (a.pos.z - gz < 320 && d.z < 0.05 && !prompt) prompt = "PULL UP";
   // roll: A/D bank the wings (left = negative); banking into the mouse turn tightens it, a held bank turns on its own
   const rollIn = out > 0 ? 0 : ((held & CSInputs.RIGHT) ? 1 : 0) - ((held & CSInputs.LEFT) ? 1 : 0);
   const k = Math.max(A.TURN_SLOW, Math.min(1.15, a.speed / A.V_CRUISE));
@@ -523,8 +523,6 @@ function tickAir(p, pawn, dt, pressed, held) {
   const target = A.V_MIN + (A.V_MAX - A.V_MIN) * a.throttle;
   a.speed += (target - a.speed) * Math.min(1, dt * 0.6) - A.DIVE_GAIN * a.f.z * dt;
   a.speed = Math.max(A.V_STALL * 0.7, Math.min(A.V_MAX * 1.25, a.speed));
-  // ground avoidance: below the floor height the nose is lifted directly
-  if (a.pos.z - gz < 200 && a.f.z < 0.12) a.f = vnorm(v3(a.f.x, a.f.y, Math.min(0.12, a.f.z + 2.5 * dt)));
   const np = vadd(a.pos, a.f, a.speed * dt);
   np.x = Math.max(-A.BOX_X - 600, Math.min(A.BOX_X + 600, np.x)); np.y = Math.max(-A.BOX_Y - 600, Math.min(A.BOX_Y + 600, np.y));
   // collision with the world along the step, or the ground
@@ -702,7 +700,8 @@ function fireMortar(team, k, firerSlot) {
   const sig = CONFIG.SPREAD_BASE + d * CONFIG.SPREAD_PER_UNIT;
   const x = c.target.x + gauss() * sig, y = c.target.y + gauss() * sig;
   const t = now() + CONFIG.FLIGHT_BASE + d * CONFIG.FLIGHT_PER_UNIT;
-  shells.push({ team, k, firerSlot, x, y, t, whistled: false });
+  shells.push({ team, k, firerSlot, loaderSlot: c.loader === undefined ? -1 : c.loader, x, y, t, whistled: false });
+  c.loader = -1;
   for (const s of [c.a, c.b]) if (s >= 0) toast(P(s), "Shot out! Splash in " + (t - now()).toFixed(1) + "s", 2.5);
   return true;
 }
@@ -736,8 +735,15 @@ function impact(sh) {
     let k = Math.pow(1 - d / R, 1.2);
     const tr = Instance.TraceLine({ start: v3(pos.x, pos.y, pos.z + 16), end: chest, ignorePlayers: true });
     if (tr && tr.didHit && tr.fraction < 0.98) k *= CONFIG.TRENCH_COVER;
-    const dmg = DMG * k;
+    let dmg = DMG * k;
     if (dmg < 1) continue;
+    // the loader lands a non-lethal share first (enough for an assist), the firer the rest (the kill)
+    const loader = sh.loaderSlot >= 0 && sh.loaderSlot !== sh.firerSlot ? pawnOf(sh.loaderSlot) : undefined;
+    if (loader) {
+      const share = Math.min(Math.max(55, dmg * 0.4), pawn.GetHealth() - 1, dmg - 1);
+      if (share >= 1) { try { pawn.TakeDamage({ damage: share, damageTypes: CSDamageTypes.BLAST, attacker: loader, inflictor: loader }); } catch (e) {} dmg -= share; }
+    }
+    if (!pawn.IsAlive()) continue;
     try { pawn.TakeDamage({ damage: dmg, damageTypes: CSDamageTypes.BLAST, attacker: firer, inflictor: firer }); } catch (e) {}
   }
 }
@@ -825,7 +831,7 @@ function tickMortar(p, pawn, dt, pressed, held) {
   }
   if (at === "tube") {
     if (p.carrying && !c.loaded) {
-      if (pressed & CSInputs.USE) { p.carrying = false; c.loaded = true; for (const s of [c.a, c.b]) if (s >= 0) toast(P(s), "Mortar loaded", 2); return ""; }
+      if (pressed & CSInputs.USE) { p.carrying = false; c.loaded = true; c.loader = p.slot; for (const s of [c.a, c.b]) if (s >= 0) toast(P(s), "Mortar loaded", 2); return ""; }
       return "[E] Load the bomb";
     }
     if (c.loaded && c.target) {
@@ -958,7 +964,7 @@ Instance.OnActivate(() => {
 Instance.OnRoundStart(() => {
   points = null; shells.length = 0; bombs.length = 0; tracers.length = 0;
   for (const p of players.values()) p.air = undefined;
-  for (const team of [T, CT]) for (const c of crews[team]) { c.loaded = false; c.target = null; c.impacts = []; c.cooldown = 0; }
+  for (const team of [T, CT]) for (const c of crews[team]) { c.loaded = false; c.loader = -1; c.target = null; c.impacts = []; c.cooldown = 0; }
   for (const p of players.values()) { p.deployed = false; p.deployAt = now() + CONFIG.LOBBY_RESPAWN; p.inSight = false; p.carrying = false; }
   hudEnt = undefined;
   for (const p of players.values()) p.hud.clear();
