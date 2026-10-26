@@ -402,16 +402,19 @@ def hulls(mesh, cfg, name):
 
 
 def write_vmdls(name, smd_rel, matname, vmat, hull_files):
+    """one remap to the skin material and exactly one PhysicsHullFile per hull file (rebuilt from the first block every run)"""
     for fn in (name, name + '_dyn'):
         p = os.path.join(OUT, 'models/tw/ext/%s/%s.vmdl' % (name, fn))
         if not os.path.exists(p): continue
         t = open(p).read()
         t = re.sub(r'remaps =\s*\[.*?\n\t\t\t\t\t\t\]', 'remaps =\n\t\t\t\t\t\t[\n\t\t\t\t\t\t\t{\n\t\t\t\t\t\t\t\tfrom = "%s.vmat"\n\t\t\t\t\t\t\t\tto = "%s"\n\t\t\t\t\t\t\t},\n\t\t\t\t\t\t]' % (matname, vmat), t, flags=re.S)
-        m = re.search(r'(\t\t\t\t\t\{\n\t\t\t\t\t\t_class = "PhysicsHullFile".*?\n\t\t\t\t\t\},\n)', t, flags=re.S)
-        if m:
-            block = m.group(1)
-            new = ''.join(block.replace('name = "%s_hull"' % name, 'name = "%s_hull%d"' % (name, k)).replace('%s_hull.smd' % name, os.path.basename(h)) for k, h in enumerate(hull_files))
-            t = t.replace(block, new)
+        blocks = re.findall(r'\t\t\t\t\t\{\n\t\t\t\t\t\t_class = "PhysicsHullFile".*?\n\t\t\t\t\t\},\n', t, flags=re.S)
+        if blocks:
+            tpl = re.sub(r'name = "[^"]*"', 'name = "@N@"', blocks[0], count=1)
+            tpl = re.sub(r'filename = "[^"]*"', 'filename = "@F@"', tpl, count=1)
+            new = ''.join(tpl.replace('@N@', '%s_hull%d' % (name, k)).replace('@F@', h) for k, h in enumerate(hull_files))
+            i0 = t.index(blocks[0]); i1 = t.rindex(blocks[-1]) + len(blocks[-1])
+            t = t[:i0] + new + t[i1:]
         open(p, 'w', newline='\n').write(t)
 
 
