@@ -44,7 +44,7 @@ class Pawn extends Ent {
   DestroyWeapons() { this.weapons = []; } DestroyWeapon(w) { this.weapons = this.weapons.filter(x => x !== w); }
   GiveNamedItem(n) { if (this.weapons.find(w => w.n === n)) throw new Error('duplicate weapon ' + n); this.weapons.push(new Weapon(n)); }
   FindWeapon(n) { return this.weapons.find(w => w.n === n); }
-  TakeDamage(d) { if (!(d.damage > 0)) throw new Error('bad damage'); stats.dmg++; this.hp -= Math.round(d.damage); if (this.hp <= 0) { this.hp = 0; die(this, d.attacker); } return d.damage; }
+  TakeDamage(d) { if (!(d.damage > 0)) throw new Error('bad damage'); if (hooks.mod) { const r = hooks.mod({ player: this, damage: d.damage, damageTypes: d.damageTypes || 0, attacker: d.attacker, inflictor: d.inflictor }); if (r && r.abort) { stats.blocked = (stats.blocked || 0) + 1; return 0; } } stats.dmg++; this.hp -= Math.round(d.damage); if (this.hp <= 0) { this.hp = 0; die(this, d.attacker); } return d.damage; }
 }
 class Ctl extends Ent {
   constructor(slot, team, bot) { super('', 'cs_player_controller', { x: 0, y: 0, z: 0 }); this.slot = slot; this.team = team; this.bot = bot; this.pawn = new Pawn(this); }
@@ -67,7 +67,7 @@ function setTimeout0(dt, fn) { later.push({ at: time + dt, fn }); }
 const Instance = {
   Msg: (m) => stats.msgs.push(String(m)), GetGameTime: () => time, SetThink: (f) => { Instance._think = f; }, SetNextThink: (t) => { Instance._next = t; },
   OnActivate: (f) => hooks.activate = f, OnRoundStart: (f) => hooks.round = f, OnPlayerReset: (f) => hooks.reset = f, OnPlayerDisconnect: (f) => hooks.disc = f,
-  OnPlayerKill: (f) => hooks.kill = f, OnPlayerChat: (f) => hooks.chat = f, OnBulletImpact: (f) => hooks.bullet = f,
+  OnPlayerKill: (f) => hooks.kill = f, OnPlayerChat: (f) => hooks.chat = f, OnBulletImpact: (f) => hooks.bullet = f, OnModifyPlayerDamage: (f) => hooks.mod = f,
   FindEntityByName: (n) => world.get(n), GetPlayerController: (s) => ctls[s],
   EntFireAtName: (o) => { stats.fires[o.input] = (stats.fires[o.input] || 0) + 1; if (!world.has(o.name) && !o.name.startsWith('mortar_')) throw new Error('EntFire at missing entity ' + o.name); },
   ServerCommand: () => {},

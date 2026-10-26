@@ -149,6 +149,14 @@ Done this session (since the first delivery):
   Now foliage, wire and props < 40 u are light-probed (bakelighting 0, `probed()`): 3356 probed / 2752 lightmapped. Far probe strips
   (`far_probe_N`, voxel 108, z -140..900) around bf_probe cover the outer forest; aerodrome probes extended down to the ground.
 
+- tw13 (26 Oct, first playtest fixes): no periodic air draw - pilots posted on respawn (AIR_CHANCE + merit, !air preference first) or
+  immediately by !air/!mortar/!infantry (`requestRole`, queued if full). Planes died on spawn: groundZ() traced into the player's own
+  plane (now ignores all aircraft). OnModifyPlayerDamage guard: pilots only take enemy/crash damage, mortar crews in their pit only enemy
+  damage; blocked hits logged as "[tw] blocked ..." (crew died on firing, cause not found in script - check console). Clips lowered
+  (trench walls g+110, skirmish +128, mortar enclosures +220). Fog lighter (cubemap 400-7500 max 0.85, volumetric 0.6, 3 fog banks,
+  15 ground patches). `!agents` toggles SetModel agents (suspect for oversized first-person weapons). Weapons: copy bat
+  `copy_ww1_weapons_mg_trenchwarfare.bat` brings weapons.vdata + models/materials ww1 from the testing addon.
+
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
 - Done 03:12: shelter candles + baked warm light, wreck/crater smoke, distant smoke columns, damaged-plane smoke (HP <= 45).

@@ -459,7 +459,7 @@ for s in (-1, 1):
             boxes = [b_ for b_ in ((box[0], box[1], EXIT_X - EXIT_W, box[3]), (EXIT_X + EXIT_W, box[1], box[2], box[3])) if b_[2] - b_[0] > 1]
         for (bx0, by0, bx1, by1) in boxes:
             if s < 0: bx0, bx1 = -bx1, -bx0
-            vmesh.mesh_node(vmesh.box_mesh(bx0, by0, floor + 38, bx1, by1, g + 420, PCLIP), GROUP, bake=False, shadows=False, visexclude=True)
+            vmesh.mesh_node(vmesh.box_mesh(bx0, by0, floor + 38, bx1, by1, g + 110, PCLIP), GROUP, bake=False, shadows=False, visexclude=True)
     # fire-steps
     for (xw, ya, yb) in LY.firesteps():
         L = yb - ya; cnt = max(1, int(round(L / 64.0))); sc = L / (cnt * 64.0)
@@ -760,7 +760,7 @@ for s in (-1, 1):
                 ok = prop(nm, x, y, gz(x, y), yaw_, check=True, pad=2)
             if ok is not None: placed += 1
         # crew enclosure
-        h = 230; zb = gz(cx, cy) - 60; zt = zb + 480
+        h = 230; zb = gz(cx, cy) - 60; zt = zb + 220
         for (x0, y0, x1, y1) in ((cx - h, cy - h, cx + h, cy - h + 4), (cx - h, cy + h - 4, cx + h, cy + h), (cx - h, cy - h, cx - h + 4, cy + h), (cx + h - 4, cy - h, cx + h, cy + h)):
             vmesh.mesh_node(vmesh.box_mesh(x0, y0, zb, x1, y1, zt, PCLIP), GROUP, bake=False, shadows=False, visexclude=True)
         ent('info_target', (cx, cy, gz(cx, cy)), group=GROUP, targetname='mortarpit_%s_%d' % ('ct' if s > 0 else 't', k + 1))
@@ -882,10 +882,13 @@ print('woodland: %d trees' % nt)
 # ---------------------------------------------------------------- fog banks drifting over no man's land
 for x in (-1024.0, 0.0, 1024.0):
     for y in np.arange(-3072, 3073, 1024.0):
-        ent('info_particle_system', (x + rng.uniform(-120, 120), y + rng.uniform(-120, 120), gz(x, y) + 40), group=GROUP,
+        r_ = rng.uniform(-120, 120), rng.uniform(-120, 120)
+        if x != 0.0 or abs(y) % 2048 != 1024: continue        # thinned: a few banks down the middle only (players must see across, with effort)
+        ent('info_particle_system', (x + r_[0], y + r_[1], gz(x, y) - 20), group=GROUP,
             effect_name='particles/maps/gg_vietnam/vietnam_fog_volume_1024.vpcf', start_active='1')
 for _ in range(30):
     x = rng.uniform(-1450, 1450); y = rng.uniform(-3300, 3300)
+    if _ % 2: continue
     ent('info_particle_system', (x, y, gz(x, y) + 8), group=GROUP, effect_name='particles/maps/gg_vietnam/vietnam_fog_ground.vpcf', start_active='1')
 
 # ---------------------------------------------------------------- infantry spawns (teleport destinations) and heal points
@@ -962,10 +965,10 @@ ent('point_soundevent', (0, 0, LZ + 200), group=GROUP, targetname='tw_ambience',
 clone('light_environment', (0, 0, 2000), (55, 145, 0), targetname='tw_sun', color='196 202 210', brightness='1.6', castshadows='1', directlight='3',
       skycolor='150 160 175', skyintensity='1.6', fog='1', fogstrength='0.6')
 clone('env_sky', (64, 0, 2000), targetname='sky', skyname='materials/skybox/sky_overcast_01.vmat', tint_color='190 196 205', brightnessscale='0.9')
-clone('env_cubemap_fog', (128, 0, 2000), cubemapfogstartdistance='250', cubemapfogenddistance='6200', cubemapfogfalloffexponent='1.25',
-      cubemapheightfog='1', cubemapfogheightstart='300.0', cubemapfogheightend='2600.0', cubemapfogheightexponent='1.0', cubemapfogmaxopacity='0.93',
+clone('env_cubemap_fog', (128, 0, 2000), cubemapfogstartdistance='400', cubemapfogenddistance='7500', cubemapfogfalloffexponent='1.25',
+      cubemapheightfog='1', cubemapfogheightstart='300.0', cubemapfogheightend='2600.0', cubemapfogheightexponent='1.0', cubemapfogmaxopacity='0.85',
       cubemapfogskyentity='sky')
-ent('env_volumetric_fog_controller', (192, 0, 2000), group=GROUP, targetname='tw_vfog', IsMaster='1', FogStrength='1.4', TintColor='205 210 215',
+ent('env_volumetric_fog_controller', (192, 0, 2000), group=GROUP, targetname='tw_vfog', IsMaster='1', FogStrength='0.6', TintColor='205 210 215',
     DrawDistance='1600', FadeInStart='40', FadeInEnd='300', FadeSpeed='2', IndirectEnabled='1', IndirectStrength='1.0', IndirectVoxelDim='256',
     NoiseSpeed='0.15', NoiseStrength='0.55', NoiseScale='.004 .004 .01', volume_depth_override='0', volume_first_slice_thickness='0')
 clone('post_processing_volume', (256, 0, 2000), postprocessing='postprocess/%s.vpost' % NAME, master='1', minexposure='0.6', maxexposure='1.8',
@@ -1276,7 +1279,7 @@ nfence = 0; nclip = 0
 for a_, b_ in zip(OUTLINE[:-1], OUTLINE[1:]):
     if a_[1] <= EXIT_Y + 1 and b_[1] <= EXIT_Y + 1: continue                  # the open side onto the ladder
     zs = [gs(a_[0] + (b_[0] - a_[0]) * t_, a_[1] + (b_[1] - a_[1]) * t_) for t_ in np.linspace(0, 1, 6)]
-    clip_slab(a_, b_, min(zs) - 96, max(zs) + 420); nclip += 1
+    clip_slab(a_, b_, min(zs) - 96, max(zs) + 128); nclip += 1
     # the visible fence: barbed-wire panels on pickets, gaps and leans where shellfire got it
     L_ = math.hypot(b_[0] - a_[0], b_[1] - a_[1]); yaw = math.degrees(math.atan2(b_[1] - a_[1], b_[0] - a_[0]))
     nseg = max(1, int(round(L_ / 128.0)))

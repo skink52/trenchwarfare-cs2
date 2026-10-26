@@ -3,7 +3,7 @@
 //
 // Roles: INFANTRY (fire trench, respawn, bolt rifle + pistol + knife, 3-kill streak -> Mondragon / Lewis gun, dressing stations heal),
 //        MORTAR (5 crews x 2 per side: plot at the map table, fetch a bomb, load, fire; simulated shells with spread),
-//        AIR (5 biplanes per side, arcade flight in third person; pilots drawn every AIR_CHECK s, AIR_LIVES lives, then back to the ground).
+//        AIR (5 biplanes per side, arcade flight in third person; pilots posted on respawn or by !air, AIR_LIVES lives, then back to the ground).
 // Bots are always infantry. Everyone spawns in the briefing room and is sent to their post after a short delay.
 //
 // Map entities this script uses (all made by tools/make_map.py):
@@ -51,7 +51,9 @@ const CONFIG = {
   FRIENDLY_SPLASH: false,
   POOL: 12,
   AMBIENT_MIN: 4, AMBIENT_MAX: 13, AMBIENT_CLEAR: 550,   // cosmetic no man's land bursts (seconds between, min distance to any player)
-  AIR_ENABLED: true, AIR_SLOTS: 5, AIR_LIVES: 2, AIR_CHECK: 30,
+  AIR_ENABLED: true, AIR_SLOTS: 5, AIR_LIVES: 2,
+  AIR_CHANCE: 0.12,          // on respawn, chance a ground player is posted to the aerodrome (if a plane is free; + merit, + first flight)
+  SET_AGENTS: true,          // put the WW1-ish agent models on players (CONFIG.AGENTS)
   // arcade flight (mouse aim: the plane turns toward where the pilot looks; W/S throttle, A/D roll, LMB guns, RMB bomb)
   AIR: {
     SPAWN_ALT: 1100, V_STALL: 420, V_MIN: 520, V_CRUISE: 1150, V_MAX: 1650, ACCEL: 0.6, DIVE_GAIN: 520,
@@ -236,43 +238,39 @@ function chooseRole(p, pawn, team) {
   if (p.role === "air" && p.lives > 0) return;
   if (p.role === "air") { setRole(p, Math.random() < 0.5 && seatFree(team) ? "mortar" : "infantry", team); return; }
   if (!p.role) {
-    if (p.pref === "mortar" && seatFree(team)) setRole(p, "mortar", team);
+    if (p.pref === "air" && airFree(team)) setRole(p, "air", team);
+    else if (p.pref === "mortar" && seatFree(team)) setRole(p, "mortar", team);
     else if (p.pref === "infantry") setRole(p, "infantry", team);
     else setRole(p, Math.random() < CONFIG.MORTAR_CHANCE && seatFree(team) ? "mortar" : "infantry", team);
     return;
   }
-  if (p.pref && p.pref !== p.role && (p.pref !== "mortar" || seatFree(team))) { setRole(p, p.pref, team); return; }
+  if (p.pref === "air" && airFree(team)) { setRole(p, "air", team); return; }
+  if (p.pref !== "infantry" && p.pref !== "mortar" && airFree(team) &&
+      Math.random() < CONFIG.AIR_CHANCE + 0.03 * Math.min(5, p.merit) + (p.flown === 0 ? 0.08 : 0)) { setRole(p, "air", team); p.merit = 0; return; }
+  if (p.pref && p.pref !== "air" && p.pref !== p.role && (p.pref !== "mortar" || seatFree(team))) { setRole(p, p.pref, team); return; }
   if (!p.pref && Math.random() < CONFIG.ROTATE_CHANCE) {
     if (p.role === "infantry" && seatFree(team)) setRole(p, "mortar", team);
     else if (p.role === "mortar") setRole(p, "infantry", team);
   }
 }
 
-// aircraft (biplanes, later): weighted draw from ground players every AIR_CHECK seconds
-let nextAirCheck = 0;
-function airCheck() {
-  if (!CONFIG.AIR_ENABLED || now() < nextAirCheck) return;
-  nextAirCheck = now() + CONFIG.AIR_CHECK;
-  for (const team of [T, CT]) {
-    let inAir = 0; const cand = [];
-    for (const p of players.values()) {
-      if (p.team !== team) continue;
-      if (p.role === "air") { inAir++; continue; }
-      const c = Instance.GetPlayerController(p.slot);
-      if (!c || c.IsBot()) continue;
-      cand.push({ p, w: 1 + p.merit + (p.pref === "air" ? 3 : 0) + (p.flown === 0 ? 2 : 0) });
-    }
-    for (let k = inAir; k < CONFIG.AIR_SLOTS && cand.length; k++) {
-      let tot = 0; for (const c of cand) tot += c.w;
-      let r = Math.random() * tot, i = 0;
-      for (; i < cand.length - 1; i++) { r -= cand[i].w; if (r <= 0) break; }
-      const pick = cand.splice(i, 1)[0].p;
-      setRole(pick, "air", team); pick.merit = 0;
-      const pawn = pawnOf(pick.slot);
-      if (pawn && pawn.IsAlive()) deploy(pick, pawn);
-      toast(pick, "Posted to the aerodrome!", 4);
-    }
-  }
+// aircraft: posted on respawn (chooseRole) or by !air; nobody is pulled out of the fight mid-life
+function airFree(team) {
+  if (!CONFIG.AIR_ENABLED) return false;
+  let n = 0; for (const q of players.values()) if (q.team === team && q.role === "air") n++;
+  return n < CONFIG.AIR_SLOTS && (!points || (points.aircraft[team] || []).some(a => live(a.ent) && a.pilot < 0));
+}
+// chat role request: switch now if the role is open, otherwise it is kept as the preference for the next respawn
+function requestRole(p, role) {
+  const pawn = pawnOf(p.slot);
+  const team = p.team;
+  if (p.role === role) return;
+  const open = role === "air" ? airFree(team) : role === "mortar" ? seatFree(team) : true;
+  if (!open) { toast(p, role === "air" ? "All aircraft are up - you're next in line" : "Mortar crews are full - you're next in line", 4); return; }
+  if (p.air && pawn) endFlight(p, pawn, false);
+  if (p.inSight) leaveSight(p, pawn);
+  setRole(p, role, team);
+  if (pawn && pawn.IsAlive() && p.deployed) deploy(p, pawn);
 }
 
 // ------------------------------------------------------------------ deploy: loadout + teleport
@@ -425,7 +423,9 @@ function crashPilot(p, pawn) {
   const a = p.air;
   const killer = a.lastHitBy >= 0 && now() - a.lastHitAt < CONFIG.AIR.CRASH_CREDIT ? pawnOf(a.lastHitBy) : undefined;
   endFlight(p, pawn, true);
+  p.crashing = true;
   try { pawn.TakeDamage({ damage: 1000, damageTypes: CSDamageTypes.BLAST, attacker: killer || pawn, inflictor: killer || pawn }); } catch (e) {}
+  p.crashing = false;
 }
 function hitPilot(ac, damage, attackerPawn) {
   if (!ac || ac.pilot < 0) return;
@@ -485,7 +485,7 @@ function tickAir(p, pawn, dt, pressed, held) {
   const np = vadd(a.pos, a.f, a.speed * dt);
   np.x = Math.max(-A.BOX_X - 600, Math.min(A.BOX_X + 600, np.x)); np.y = Math.max(-A.BOX_Y - 600, Math.min(A.BOX_Y + 600, np.y));
   // collision with the world along the step, or the ground
-  const tr = Instance.TraceLine({ start: a.pos, end: np, ignoreEntity: [a.ac.ent, pawn], ignorePlayers: true });
+  const tr = Instance.TraceLine({ start: a.pos, end: np, ignoreEntity: planeEnts(), ignorePlayers: true });
   if ((tr && tr.didHit && !tr.startedInSolid) || np.z < gz + A.ALT_MIN * 0.25) { crashPilot(p, pawn); return ""; }
   a.pos = np;
   placePlane(p, pawn, false);
@@ -627,8 +627,13 @@ function worldToSight(team, x, y) {
   return { u: (E - y) / (2 * E), v: (E - x) / (2 * E) };
 }
 function stepOf(t) { return Math.max(0, Math.min(CONFIG.TARGET_STEPS - 1, Math.floor(t * CONFIG.TARGET_STEPS))); }
+function planeEnts() {
+  const out = [];
+  if (points) for (const team of [T, CT]) for (const a of points.aircraft[team] || []) if (live(a.ent)) out.push(a.ent);
+  return out;
+}
 function groundZ(x, y) {
-  const tr = Instance.TraceLine({ start: v3(x, y, 3000), end: v3(x, y, -600), ignorePlayers: true });
+  const tr = Instance.TraceLine({ start: v3(x, y, 3000), end: v3(x, y, -600), ignoreEntity: planeEnts(), ignorePlayers: true });
   return tr && tr.didHit ? tr.end.z : 0;
 }
 function fireMortar(team, k, firerSlot) {
@@ -809,7 +814,6 @@ function think() {
   tickShells();
   tickBombs(dt);
   tickAmbient();
-  airCheck();
   for (let s = 0; s < 64; s++) {
     const ctl = Instance.GetPlayerController(s);
     if (!ctl) continue;
@@ -917,7 +921,7 @@ Instance.OnPlayerReset(({ player }) => {
   if (team === T || team === CT) {
     if (p.team !== team) { leaveSeat(p); p.role = null; p.team = team; }
     const ag = CONFIG.AGENTS[team];
-    try { pawn.SetModel("characters/models/" + ag[s % ag.length] + ".vmdl"); } catch (e) {}
+    if (CONFIG.SET_AGENTS) try { pawn.SetModel("characters/models/" + ag[s % ag.length] + ".vmdl"); } catch (e) {}
     chooseRole(p, pawn, team);
   }
 });
@@ -948,6 +952,24 @@ Instance.OnPlayerKill(({ player, attacker }) => {
     toast(a, CONFIG.UPGRADE_NAME[team] + " issued for your streak!  (SHIFT+E or !swap: back to the " + CONFIG.RIFLE_NAME[team] + ")", 5);
   }
 });
+// damage guard: pilots in the air only take damage from the enemy (or their own crash), mortar crews in their pit only from enemy players.
+// Everything else (props pushing the hidden pilot, falls, world damage at the pit) is dropped and logged to the console.
+Instance.OnModifyPlayerDamage((ev) => {
+  const v = ev.player; const vs = slotOfPawn(v); if (vs < 0) return;
+  const p = P(vs); const ap = toPawn(ev.attacker);
+  const enemy = !!(ap && ap !== v && ap.GetTeamNumber() !== v.GetTeamNumber());
+  let why = "";
+  if (p.air && !p.crashing && !enemy) why = "pilot";
+  else if (p.role === "mortar" && p.crew >= 0 && !enemy) {
+    const pit = pitPos(p.team, p.crew), o = v.GetAbsOrigin();
+    if (pit && dist2(o, pit) < 320) why = "mortar pit";
+  }
+  if (why) {
+    let cls = "?"; try { cls = ev.inflictor ? ev.inflictor.GetClassName() + ":" + ev.inflictor.GetEntityName() : "none"; } catch (e) {}
+    Instance.Msg("[tw] blocked " + Math.round(ev.damage) + " damage to " + why + " (slot " + vs + ", types " + ev.damageTypes + ", inflictor " + cls + ")");
+    return { abort: true };
+  }
+});
 Instance.OnBulletImpact(({ weapon, hitEntity }) => {
   const ac = planeOfEntity(hitEntity); if (!ac) return;
   let owner; try { owner = toPawn(weapon.GetOwner()); } catch (e) {}
@@ -958,10 +980,11 @@ Instance.OnPlayerChat(({ player, text }) => {
   if (!player) return;
   const s = player.GetPlayerSlot(); const p = P(s);
   const t = String(text || "").trim().toLowerCase();
-  if (t === "!mortar" || t === "!artillery") { p.pref = "mortar"; roleCard(p, "mortar"); }
-  else if (t === "!infantry" || t === "!rifle") { p.pref = "infantry"; roleCard(p, "infantry"); }
-  else if (t === "!air" || t === "!pilot") { p.pref = "air"; roleCard(p, "air"); }
+  if (t === "!mortar" || t === "!artillery") { p.pref = "mortar"; roleCard(p, "mortar"); if (p.team === T || p.team === CT) requestRole(p, "mortar"); }
+  else if (t === "!infantry" || t === "!rifle") { p.pref = "infantry"; roleCard(p, "infantry"); if (p.team === T || p.team === CT) requestRole(p, "infantry"); }
+  else if (t === "!air" || t === "!pilot") { p.pref = "air"; roleCard(p, "air"); if (p.team === T || p.team === CT) requestRole(p, "air"); }
   else if (t === "!swap") { const pw = toPawn(player); if (pw && pw.IsAlive()) swapRifle(p, pw); }
+  else if (t === "!agents") { CONFIG.SET_AGENTS = !CONFIG.SET_AGENTS; say("[tw] WW1 player models " + (CONFIG.SET_AGENTS ? "ON" : "OFF") + " (from next respawn)"); }
   else if (t === "!random") { p.pref = ""; toast(p, "Roles will be chosen for you", 3); }
   else if (t === "!roles") {
     const cnt = (team, r) => { let n = 0; for (const q of players.values()) if (q.team === team && q.role === r) n++; return n; };
