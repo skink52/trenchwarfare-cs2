@@ -70,22 +70,7 @@ def digital(img, team):
 for team in ('t', 'ct'):
     digital(base_img, team).save(os.path.join(OUT, 'panorama/images/custom_game/tw/target_%s.png' % team))
 
-# radar (whole battle zone) and overview file
-rad = base_img.resize((1024, 1024), Image.LANCZOS)
-os.makedirs(os.path.join(OUT, 'panorama/images/overheadmaps'), exist_ok=True)
-rad.save(os.path.join(OUT, 'panorama/images/overheadmaps/mg_trenchwarfare_radar_psd.png'))
-open(os.path.join(OUT, 'panorama/images/overheadmaps/mg_trenchwarfare_radar_psd.vtex'), 'w', newline='\n').write(
-    '<!-- dmx encoding keyvalues2_noids 1 format vtex 1 -->\n"CDmeVtex"\n{\n\t"m_inputTextureArray" "element_array" \n\t[\n\t\t"CDmeInputTexture"\n\t\t{\n'
-    '\t\t\t"m_name" "string" "0"\n\t\t\t"m_fileName" "string" "panorama/images/overheadmaps/mg_trenchwarfare_radar_psd.png"\n\t\t\t"m_colorSpace" "string" "srgb"\n'
-    '\t\t\t"m_typeString" "string" "2D"\n\t\t\t"m_imageProcessorArray" "element_array" \n\t\t\t[\n\t\t\t]\n\t\t}\n\t]\n'
-    '\t"m_outputTypeString" "string" "2D"\n\t"m_outputFormat" "string" "DXT1"\n\t"m_textureOutputChannelArray" "element_array"\n\t[\n\t\t"CDmeTextureOutputChannel"\n\t\t{\n'
-    '\t\t\t"m_inputTextureArray" "string_array" [ "0" ]\n\t\t\t"m_srcChannels" "string" "rgba"\n\t\t\t"m_dstChannels" "string" "rgba"\n'
-    '\t\t\t"m_mipAlgorithm" "CDmeImageProcessor"\n\t\t\t{\n\t\t\t\t"m_algorithm" "string" "Box"\n\t\t\t\t"m_stringArg" "string" ""\n\t\t\t\t"m_vFloat4Arg" "vector4" "0 0 0 0"\n\t\t\t}\n'
-    '\t\t\t"m_outputColorSpace" "string" "srgb"\n\t\t}\n\t]\n}\n')
-os.makedirs(os.path.join(GAME, 'resource/overviews'), exist_ok=True)
-open(os.path.join(GAME, 'resource/overviews/mg_trenchwarfare.txt'), 'w', newline='\n').write(
-    '"mg_trenchwarfare"\n{\n\t"material"\t"overviews/mg_trenchwarfare"\n\t"pos_x"\t"%d"\n\t"pos_y"\t"%d"\n\t"scale"\t"%.4f"\n\t"rotate"\t"0"\n\t"zoom"\t"1"\n}\n'
-    % (-EXT, EXT, 2 * EXT / 1024))
+# radar + overview: tools/make_radar.py
 
 # paper trench map for the plotting tables
 pa = np.asarray(base_img.convert('L'), np.float32) / 255

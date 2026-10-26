@@ -2,6 +2,14 @@
 
 Read this first when resuming. Newest state at the top.
 
+## State 2026-10-26 ~13:15 ACDT (tw8_content_01.zip radar, tw8_game.zip overview)
+
+- Radar: `tools/make_radar.py <vmap> <addon> <game>` - 2048 px painted trench map of x,y +-6800 (overview pos -6800/6800, scale
+  13.2812): hillshade + contours, churned no man's land, crater and trench pools (clipped to the floor), revetted trenches with sandbag
+  lips and duckboards, shelters, mortar pits, wire, wrecks, every tree crown with shadow, both aerodromes with hangars and parked
+  aircraft, skirmish fence + exit ladders, labels, compass, scale bar; areas players can't walk are dimmed. BC7. Built from the
+  user's latest vmap (out/user_1300.vmap). render_top.py still makes the mortar targeting screens (its old radar output is superseded).
+
 ## State 2026-10-26 ~13:05 ACDT (tw7_content_01.zip: banner, HUD role cards, script)
 
 - unpack_mg_trenchwarfare.bat now applies each zip once (logs\mg_trenchwarfare_applied.txt, pre-seeded with tw3..tw6) - a re-run no
