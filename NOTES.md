@@ -2,6 +2,18 @@
 
 Read this first when resuming. Newest state at the top.
 
+## State 2026-10-26 ~13:05 ACDT (tw7_content_01.zip: banner, HUD role cards, script)
+
+- unpack_mg_trenchwarfare.bat now applies each zip once (logs\mg_trenchwarfare_applied.txt, pre-seeded with tw3..tw6) - a re-run no
+  longer overwrites the user's Hammer edits with an older map. Map changes from now on must be regenerated from the user's latest vmap.
+- Banner (user's wording): THE WESTERN FRONT / hold the line / rewards and glory / !roles / !swap / Slime Servers discord.
+- Chat !infantry / !mortar / !air show a role orders card (HUD #tw_info, right of centre, 9 s) and set the preference; !roles shows
+  all roles with team counts. Card text is the user's.
+- User's Hammer edits since tw6 (vmap at 13:00, copied to out/user_1300.vmap; not yet regenerated): skirmish ladders moved to y 2904
+  near-vertical (pitch -4) with their own toolsinvisibleladder meshes outside tw_gen, skybox_reference at (0,0,0), two skirmish trees
+  moved, 10 wire coils + 10 wire fences added along the track/rim. Generator updated to match (ladder pose, no generated climb
+  volume, skybox_reference at 0,0,0; ladders no longer exempt from edit preservation). Next regen: make_map.py user_1300.vmap ... gen_tw6.vmap.
+
 ## State 2026-10-26 ~11:40 ACDT (tw6_content_01.zip + tw6_map_main.zip; unpack_mg_trenchwarfare.bat applies tw2..tw9 in order)
 
 - Regenerate from the user's Hammer-edited map: `make_map.py <user vmap> <out> <addon> <previous generated vmap>` (here

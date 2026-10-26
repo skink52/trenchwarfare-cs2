@@ -124,7 +124,7 @@ function P(slot) {
   let p = players.get(slot);
   if (!p) {
     p = { slot, role: null, team: 0, crew: -1, seat: "", deployAt: 0, deployed: false, first: true, streak: 0, kills: 0, upgraded: false,
-          pref: "", carrying: false, inSight: false, u: 0.5, v: 0.3, prevKeys: 0, lives: 0, merit: 0, flown: 0, toastUntil: 0, bannerUntil: 0,
+          pref: "", carrying: false, inSight: false, u: 0.5, v: 0.3, prevKeys: 0, lives: 0, merit: 0, flown: 0, toastUntil: 0, bannerUntil: 0, infoUntil: 0,
           healing: false, mortarKills: 0, hud: new Map() };
     players.set(slot, p);
   }
@@ -175,6 +175,21 @@ function hSwap(p, id, group, cls) {   // one class per group (marker positions, 
 }
 function hudReset(p) { const h = hud(); if (h) { try { h.ResetForPlayer(p.slot); } catch (e) {} } p.hud.clear(); }
 function toast(p, text, secs) { hText(p, "tw_toast_text", text); p.toastUntil = now() + (secs || 3); }
+function info(p, title, lines, foot, secs) {
+  hText(p, "tw_info_title", title);
+  for (let k = 0; k < 5; k++) hText(p, "tw_info_l" + (k + 1), lines[k] || "");
+  hText(p, "tw_info_foot", foot || "");
+  p.infoUntil = now() + (secs || 9);
+}
+function roleCard(p, role) {
+  const team = p.team === T || p.team === CT ? p.team : CT;
+  if (role === "infantry") return info(p, "INFANTRY", [CONFIG.RIFLE_NAME[team], "Hold the line.", "Earn new equipment with multiple kills.",
+    "SHIFT+E / !swap to revert to old weapons."], "You'll go to the fire trench when you next deploy.");
+  if (role === "mortar") return info(p, "MORTARS", ["Crews of two.", "Aim on the map table: E, then WASD.", "MOUSE1 lock, SPACE fire.", "Load from the ammo box with E."],
+    "You'll join a mortar crew when you next deploy (if a seat is free).");
+  if (role === "air") return info(p, "AIRCRAFT", ["!air to nominate to be a pilot.", "Mouse steers, W/S throttle, A/D roll.", "MOUSE1 guns, MOUSE2 bombs.", "2 lives, back to ground."],
+    CONFIG.AIR_ENABLED ? "Nominated - you're more likely to be posted to the aerodrome." : "No aircraft yet - noted for later.");
+}
 function banner(p, title, sub, secs) { hText(p, "tw_banner_title", title); hText(p, "tw_banner_sub", sub); p.bannerUntil = now() + (secs || 5); }
 
 // ------------------------------------------------------------------ roles
@@ -795,6 +810,7 @@ function think() {
     if (!ctl) continue;
     const pawn = live(ctl.GetPlayerPawn());
     const p = P(s);
+    hClass(p, "tw_info", "show", t < (p.infoUntil || 0));
     if (!pawn || !pawn.IsAlive()) { if (p.air) endFlight(p, pawn, true); if (p.inSight) leaveSight(p, pawn); hClass(p, "tw_target", "show", false); hClass(p, "tw_prompt", "show", false); continue; }
     const team = pawn.GetTeamNumber();
     if (team !== T && team !== CT) continue;
@@ -935,13 +951,15 @@ Instance.OnPlayerChat(({ player, text }) => {
   if (!player) return;
   const s = player.GetPlayerSlot(); const p = P(s);
   const t = String(text || "").trim().toLowerCase();
-  if (t === "!mortar" || t === "!artillery") { p.pref = "mortar"; toast(p, "You'll join a mortar crew when you next deploy (if a seat is free)", 4); }
-  else if (t === "!infantry" || t === "!rifle") { p.pref = "infantry"; toast(p, "You'll go to the fire trench when you next deploy", 4); }
-  else if (t === "!air" || t === "!pilot") { p.pref = "air"; toast(p, CONFIG.AIR_ENABLED ? "You're more likely to be posted to the aerodrome" : "No aircraft yet - noted for later", 4); }
+  if (t === "!mortar" || t === "!artillery") { p.pref = "mortar"; roleCard(p, "mortar"); }
+  else if (t === "!infantry" || t === "!rifle") { p.pref = "infantry"; roleCard(p, "infantry"); }
+  else if (t === "!air" || t === "!pilot") { p.pref = "air"; roleCard(p, "air"); }
   else if (t === "!swap") { const pw = toPawn(player); if (pw && pw.IsAlive()) swapRifle(p, pw); }
   else if (t === "!random") { p.pref = ""; toast(p, "Roles will be chosen for you", 3); }
   else if (t === "!roles") {
     const cnt = (team, r) => { let n = 0; for (const q of players.values()) if (q.team === team && q.role === r) n++; return n; };
-    toast(p, "Infantry " + cnt(p.team, "infantry") + "  Mortar " + cnt(p.team, "mortar") + "/" + (CONFIG.CREWS * 2) + (CONFIG.AIR_ENABLED ? "  Air " + cnt(p.team, "air") : ""), 4);
+    info(p, "COMBAT ROLES", ["INFANTRY (" + cnt(p.team, "infantry") + ")  -  !infantry", "MORTARS (" + cnt(p.team, "mortar") + "/" + (CONFIG.CREWS * 2) + ")  -  !mortar",
+      CONFIG.AIR_ENABLED ? "AIRCRAFT (" + cnt(p.team, "air") + "/" + CONFIG.AIR_SLOTS + ")  -  !air" : "", "!swap  -  switch between unlocked primaries"],
+      "Type a role's command to see its orders and ask for it.");
   }
 });

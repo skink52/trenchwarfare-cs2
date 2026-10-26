@@ -76,9 +76,8 @@ if len(sys.argv) > 4:
             for g_ in msig.get(obj_sig(c), ()):
                 if id(g_) not in used: hit = g_; break
         if hit is not None: used.add(id(hit)); continue
-        if c.type == 'CMapEntity' and 'ladder' in (c.get('entity_properties').get('model') or ''): continue
         c.attr('customVisGroup')[2] = USER_GROUP
-    SKIP_SIGS |= {obj_sig(g_) for g_ in prev if id(g_) not in used and not (g_.type == 'CMapEntity' and 'ladder' in (g_.get('entity_properties').get('model') or ''))}
+    SKIP_SIGS |= {obj_sig(g_) for g_ in prev if id(g_) not in used}
     json.dump(sorted(SKIP_SIGS), open(EDITS_JSON, 'w'), indent=0)
     print('user edits: %d kept as %s, %d generated objects replaced' % (sum(1 for c in world.get('children') if c.get('customVisGroup', '') == USER_GROUP), USER_GROUP, len(SKIP_SIGS)))
 
@@ -933,7 +932,7 @@ for s in (-1, 1):
 clone('env_soundscape', (0, 0, 300), radius='12000', soundscape='Nothing', enablesoundevent='1', soundevent='tw.amb.front')
 
 # ---------------------------------------------------------------- 3D skybox (maps/mg_trenchwarfare_3dskybox.vmap, sky_camera at its origin, scale 16)
-ent('skybox_reference', (0, 0, -12000), group=GROUP, targetname='tw_skybox', targetMapName='maps/%s_3dskybox.vmap' % NAME,
+ent('skybox_reference', (0, 0, 0), group=GROUP, targetname='tw_skybox', targetMapName='maps/%s_3dskybox.vmap' % NAME,
     fixupNames='1', worldGroupID='skyboxWorldGroup0')
 
 # ---------------------------------------------------------------- sky shell, vis hints, nav seeds, minimap bounds
@@ -960,27 +959,21 @@ def banner_png():
     W, H = 2048, int(2048 * bh / bw)
     im = Image.new('RGB', (W, H), (34, 31, 26))
     dr = ImageDraw.Draw(im)
-    f1 = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf', 74)
-    f2 = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf', 34)
-    f3 = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf', 28)
+    f1 = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf', 80)
+    f2 = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf', 36)
+    f3 = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf', 30)
+    f4 = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf', 26)
     dr.rectangle((14, 14, W - 15, H - 15), outline=(170, 150, 110), width=6)
-    t = 'THE WESTERN FRONT'
-    bb = dr.textbbox((0, 0), t, font=f1); dr.text(((W - bb[2]) / 2, 30), t, fill=(224, 210, 176), font=f1)
-    cols = [('INFANTRY', ['Gewehr 98 / Lee-Enfield, pistol, knife.', 'Hold the fire trench - you respawn.', '3 kills in a row: Mondragon / Lewis gun', '(SHIFT+E or !swap: back to the rifle).',
-                          'Dressing stations heal you.']),
-            ('TRENCH MORTARS', ['5 crews of 2 per side, behind the lines.', 'Map table [E]: WASD plot, MOUSE1 lock,', 'SPACE fire. Ammo box [E]: take a bomb,',
-                                'mortar [E]: load, then [E] FIRE.', 'Shells fly long - correct your aim.']),
-            ('AIRCRAFT', ['Pilots are picked every 30 s (!air).', 'Mouse steers, W/S throttle, A/D roll,', 'MOUSE1 guns, MOUSE2 bomb.', 'Rifle fire hits the pilot.',
-                          '2 lives, then back to the ground.'])]
-    cw = (W - 120) / 3
-    for i, (h, lines) in enumerate(cols):
-        x = 60 + i * cw
-        dr.text((x, 140), h, fill=(214, 178, 96), font=f2)
-        for j, l in enumerate(lines): dr.text((x, 186 + j * 36), l, fill=(214, 206, 188), font=f3)
-    t2 = 'Woods skirmish: ladder at the north end of the fire trench.   Chat: !infantry  !mortar  !air  !swap  !roles'
-    bb = dr.textbbox((0, 0), t2, font=f3); dr.text(((W - bb[2]) / 2, H - 112), t2, fill=(170, 160, 136), font=f3)
-    t = 'Wait here - your orders arrive in a moment.'
-    bb = dr.textbbox((0, 0), t, font=f2); dr.text(((W - bb[2]) / 2, H - 70), t, fill=(190, 182, 160), font=f2)
+    def centre(t, y, f, col):
+        bb = dr.textbbox((0, 0), t, font=f); dr.text(((W - (bb[2] - bb[0])) / 2 - bb[0], y), t, fill=col, font=f)
+    centre('THE WESTERN FRONT', 26, f1, (224, 210, 176))
+    dr.line((W * 0.3, 128, W * 0.7, 128), fill=(170, 150, 110), width=3)
+    centre('HOLD THE LINE, PUSH YOUR OPPOSITION INTO THE DIRT', 150, f2, (214, 178, 96))
+    centre('EARN REWARDS AND GLORY FOR GOOD PERFORMANCE', 200, f2, (214, 178, 96))
+    centre('!ROLES  TO VIEW COMBAT ROLES', 268, f3, (214, 206, 188))
+    centre('!SWAP  TO SWITCH BETWEEN UNLOCKED PRIMARIES', 310, f3, (214, 206, 188))
+    centre('CREATED FOR SLIME SERVERS', 376, f4, (170, 160, 136))
+    centre('DISCORD.GG/SLIMESERVERS', 410, f4, (150, 200, 140))
     arr = np.asarray(im, np.float32)
     yy, xx = np.mgrid[0:H, 0:W]
     grain = fbm(xx / 60.0, yy / 60.0, 1.0, 3, seed=4)[..., None]
@@ -1117,9 +1110,8 @@ for a_, b_ in zip(OUTLINE[:-1], OUTLINE[1:]):
 for s in (-1, 1):
     fl_ = float(LY.ground_low(np.array([s * EXIT_X]), np.array([EXIT_Y - 30]))[0]) - LY.DEPTH
     g_ = max(gs(s * EXIT_X, EXIT_Y + 6), gs(s * EXIT_X, EXIT_Y + 30))
-    prop('ladder', s * EXIT_X, EXIT_Y - 40, fl_ - 7.0, 270 + SK.uniform(-3, 3), pitch=-29, solid='0', reg=False)
-    x0_, x1_ = sorted((s * (EXIT_X - 18), s * (EXIT_X + 18)))
-    vmesh.mesh_node(vmesh.box_mesh(x0_, EXIT_Y - 16, fl_, x1_, EXIT_Y - 8, g_ + 34, LADDER_TOOL), GROUP, bake=False, shadows=False, visexclude=True)
+    prop('ladder', s * EXIT_X, EXIT_Y - 13, fl_ - 10.0, 270 + SK.uniform(-1, 1), pitch=-4, solid='0', reg=False)   # near-vertical (user's placement)
+    # the climb volume is the user's own toolsinvisibleladder mesh in the vmap (outside tw_gen)
     prop('sign_wood_gb' if s > 0 else 'sign_wood_de', s * (EXIT_X - 72), EXIT_Y - 4.6, fl_, 0, check=True)
 # the clearing: cover from logs, stumps, broken trees, scraped-up sandbag scrapes and dumped stores, placed in mirrored pairs
 cover = [('log_fallen', 5), ('stump_a', 3), ('stump_b', 3), ('tree_shattered_a', 1), ('tree_shattered_c', 1), ('tree_shattered_d', 1),

@@ -84,6 +84,12 @@ rule('#tw_prompt_text', font_size='28px', color='#ffffff', horizontal_align='cen
 rule('#tw_toast', horizontal_align='center', margin_top='300px', opacity='0', transition_property='opacity', transition_duration='0.25s')
 rule('#tw_toast.show', opacity='1')
 rule('#tw_toast_text', font_size='36px', color='#ffcf6a', horizontal_align='center')
+# role orders card (right of centre; chat !infantry / !mortar / !air / !roles)
+rule('#tw_info', horizontal_align='right', vertical_align='center', margin_right='60px', width='560px', opacity='0', transition_property='opacity', transition_duration='0.3s')
+rule('#tw_info.show', opacity='1')
+rule('#tw_info_title', font_size='34px', color='#f0d48a', letter_spacing='3px')
+rule('.InfoLine', font_size='22px', margin_top='7px')
+rule('#tw_info_foot', font_size='18px', color='#a8d0a0', margin_top='12px')
 # targeting screen
 rule('#tw_target', horizontal_align='center', vertical_align='center', width='%dpx' % (TM + 340), height='%dpx' % (TM + 40), opacity='0',
      transition_property='opacity', transition_duration='0.2s', background_color='#05110bdd', border='3px solid #3c8a5a')
@@ -126,6 +132,7 @@ xml = '''<root>
 		</Panel>
 		<Panel id="tw_status" class="Box" hittest="false">%s%s%s%s</Panel>
 		<Panel id="tw_toast" class="Box" hittest="false">%s</Panel>
+		<Panel id="tw_info" class="Box" hittest="false">%s</Panel>
 		<Panel id="tw_prompt" class="Box" hittest="false">%s</Panel>
 		<Panel id="tw_target" hittest="false">
 			<Panel id="tw_tmap" hittest="false">
@@ -147,7 +154,7 @@ xml = '''<root>
 ''' % (NAME, FLY, lab('tw_banner_title'), lab('tw_banner_sub'),
        lab('tw_brief_role'), lab('tw_brief_l1', 'BriefLine'), lab('tw_brief_l2', 'BriefLine'), lab('tw_brief_l3', 'BriefLine'), lab('tw_brief_count'),
        lab('tw_st_role'), lab('tw_st_l1', 'StLine'), lab('tw_st_l2', 'StLine'), lab('tw_st_l3', 'StLine'),
-       lab('tw_toast_text'), lab('tw_prompt_text'),
+       lab('tw_toast_text'), lab('tw_info_title') + ''.join(lab('tw_info_l%d' % k, 'InfoLine') for k in range(1, 6)) + lab('tw_info_foot'), lab('tw_prompt_text'),
        marker('tw_pit', 'Pit'), imp, marker('tw_lock', 'Lock'), marker('tw_ret', 'Ret'),
        lab('tw_t_range', 'TLine'), lab('tw_t_grid', 'TLine'), lab('tw_t_tube', 'TLine'), lab('tw_t_state'))
 os.makedirs(os.path.join(OUT, 'panorama/layout/custom_game'), exist_ok=True)
