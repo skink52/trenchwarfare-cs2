@@ -65,6 +65,13 @@ const CONFIG = {
     PILOT: { back: -46, up: 30 },                // (hidden) pilot pawn relative to the plane origin: in the cockpit
     TRACER_EVERY: 3, TRACER_SPEED: 9000, SIGHT_DIST: 1600, GUN_SOUND_EVERY: 2,   // effects: every Nth round a tracer / gun sound; gun-sight pip distance
   },
+  // soldier player models (tools/soldiers.py; each precached by a hidden prop_dynamic tw_uniform_N under the lobby). Applied a moment
+  // after every spawn, picked by player slot. UNIFORMS_ON false = stock agents; players can opt out with !uniform.
+  UNIFORMS_ON: true, UNIFORM_DELAY: 0.25,
+  UNIFORMS: {
+    2: [],                                                    // German: tw_de_a / tw_de_b once their rigs are re-exported
+    3: ["models/tw/players/tw_gb_a/tw_gb_a.vmdl"],            // British
+  },
   CVARS: ["mp_respawn_on_death_t 1", "mp_respawn_on_death_ct 1", "mp_respawn_immunitytime 0", "mp_freezetime 0",
           "mp_roundtime 60", "mp_buy_anywhere 0", "mp_buytime 0", "mp_death_drop_gun 0", "mp_weapons_allow_map_placed 1",
           "mp_free_armor 0", "mp_solid_teammates 1", "bot_quota_mode normal"],
@@ -142,7 +149,7 @@ function P(slot) {
   if (!p) {
     p = { slot, role: null, team: 0, crew: -1, seat: "", deployAt: 0, deployed: false, first: true, streak: 0, kills: 0, upgraded: false,
           pref: "", carrying: false, inSight: false, u: 0.5, v: 0.3, prevKeys: 0, lives: 0, merit: 0, flown: 0, toastUntil: 0, bannerUntil: 0, infoUntil: 0,
-          healing: false, mortarKills: 0, hud: new Map() };
+          healing: false, mortarKills: 0, hud: new Map(), uniformAt: 0, uniformDone: false, noUniform: false, stockModel: "" };
     players.set(slot, p);
   }
   return p;
@@ -464,6 +471,18 @@ function endFlight(p, pawn, crashed) {
 }
 // the pilot rides inside the aircraft model: shrink the pawn rather than touching its render colour/alpha (changing the render
 // mode made the local player's own third-person body and weapon draw in first person)
+// soldier model: once per life, a moment after the spawn (the engine sets its own agent on reset)
+function uniform(p, pawn, team, t) {
+  const list = CONFIG.UNIFORMS[team] || [];
+  if (!CONFIG.UNIFORMS_ON || p.noUniform || !list.length || p.uniformDone || t < p.uniformAt) return;
+  p.uniformDone = true;
+  try {
+    const cur = pawn.GetModelName();
+    if (!list.includes(cur)) p.stockModel = cur;
+    const m = list[p.slot % list.length];
+    if (cur !== m) pawn.SetModel(m);
+  } catch (e) { Instance.Msg("[tw] uniform: " + e); }
+}
 function hidePawn(pawn, hide) {
   const p = players.get(slotOfPawn(pawn));
   if (!hide && p && !p.hidden) return;
@@ -911,7 +930,8 @@ function think() {
     if (!pawn || !pawn.IsAlive()) { if (p.air) endFlight(p, pawn, true); if (p.inSight) leaveSight(p, pawn); hClass(p, "tw_target", "show", false); hClass(p, "tw_prompt", "show", false); continue; }
     const team = pawn.GetTeamNumber();
     if (team !== T && team !== CT) continue;
-    if (p.team !== team) { leaveSeat(p); p.role = null; p.team = team; p.deployed = false; p.deployAt = t + CONFIG.LOBBY_FIRST; }
+    if (p.team !== team) { leaveSeat(p); p.role = null; p.team = team; p.deployed = false; p.deployAt = t + CONFIG.LOBBY_FIRST; p.uniformDone = false; }
+    uniform(p, pawn, team, t);
     const held = keys(pawn); const pressed = held & ~p.prevKeys; p.prevKeys = held;
     let prompt = "";
     if (!p.deployed) {
@@ -1003,6 +1023,7 @@ Instance.OnPlayerReset(({ player }) => {
   const s = slotOfPawn(pawn); if (s < 0) return;
   const p = P(s);
   hidePawn(pawn, false);
+  p.uniformDone = false; p.uniformAt = now() + CONFIG.UNIFORM_DELAY;
   p.deployed = false; p.inSight = false; p.carrying = false;
   p.deployAt = now() + (p.first ? CONFIG.LOBBY_FIRST : CONFIG.LOBBY_RESPAWN);
   const team = pawn.GetTeamNumber();
@@ -1077,6 +1098,12 @@ Instance.OnPlayerChat(({ player, text }) => {
       const ok = c >= 0 && c < 16 && r >= 0 && r < 16;
       say("[tw] " + nameOf(s) + " at x " + Math.round(o.x) + " y " + Math.round(o.y) + " z " + Math.round(o.z) + "  radar square " + (ok ? String.fromCharCode(65 + c) + (r + 1) : "off the map"));
     }
+  }
+  else if (t === "!uniform") {
+    p.noUniform = !p.noUniform;
+    const pw = toPawn(player);
+    if (p.noUniform) { if (pw && pw.IsAlive() && p.stockModel) { try { pw.SetModel(p.stockModel); } catch (e) {} } toast(p, "Standard agent model (!uniform to wear the period uniform again)", 4); }
+    else { p.uniformDone = false; p.uniformAt = now(); toast(p, "Period uniform on", 3); }
   }
   else if (t === "!random") { p.pref = ""; toast(p, "Roles will be chosen for you", 3); }
   else if (t === "!roles") {

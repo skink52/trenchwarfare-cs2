@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const MODELS = path.join(root, 'out/addon');
 const N = +(process.argv[2] || 24), SECONDS = +(process.argv[3] || 180);
 let seed = 7; Math.random = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
 const ents = JSON.parse(fs.readFileSync(path.join(root, 'out/entities.json'), 'utf8'));
@@ -40,6 +41,7 @@ class Pawn extends Ent {
   GetHealth() { return this.hp; } SetHealth(v) { if (!Number.isInteger(v)) throw new Error('SetHealth non-integer ' + v); this.hp = v; }
   GetArmor() { return this.armor; } SetArmor(v) { if (!Number.isInteger(v)) throw new Error('SetArmor non-integer ' + v); this.armor = v; } HasHelmet() { return this.helmet; } SetHasHelmet(v) { this.helmet = v; }
   IsInputPressed(b) { return (this.keys & b) !== 0; } SetEyeAngles(a) { this.eye = { ...a }; } GetEyeAngles() { return this.eye || { pitch: 0, yaw: 0, roll: 0 }; } SetMoveType(m) { this.mt = m; }
+  GetModelName() { return this.model || 'agents/models/stock.vmdl'; } SetModel(m) { if (!fs.existsSync(path.join(MODELS, m)) && !m.startsWith('agents/')) throw new Error('SetModel to a model the addon lacks: ' + m); this.model = m; stats.setmodel = (stats.setmodel || 0) + 1; }
   GetCustomCamera() { return this.cam || (this.cam = new Cam(this)); }
   DestroyWeapons() { this.weapons = []; } DestroyWeapon(w) { this.weapons = this.weapons.filter(x => x !== w); }
   GiveNamedItem(n) { if (this.weapons.find(w => w.n === n)) throw new Error('duplicate weapon ' + n); this.weapons.push(new Weapon(n)); }
@@ -150,4 +152,4 @@ fs.unlinkSync(tmp);
 const D = globalThis.__twDebug; const rc = {}; for (const p of D.players.values()) rc[p.team + ':' + p.role] = (rc[p.team + ':' + p.role] || 0) + 1;
 console.log('roles', JSON.stringify(rc), 'crews', JSON.stringify(D.crews[3].map(c => [c.a, c.b, c.loaded, !!c.target, c.impacts.length])));
 const roles = {}; // count from HUD would need introspection; report activity instead
-console.log(JSON.stringify({ hud: stats.hud, vars: stats.vars, fires: stats.fires, dmg: stats.dmg, kills: stats.kills, teleports: stats.teleports, moves: stats.moves, cam: stats.cam, flyTicks: stats.flyTicks, planeHits: stats.planeHits, mortarFireAttempts: fired, msgs: stats.msgs.slice(0, 3) }));
+console.log(JSON.stringify({ hud: stats.hud, vars: stats.vars, fires: stats.fires, dmg: stats.dmg, kills: stats.kills, teleports: stats.teleports, moves: stats.moves, cam: stats.cam, flyTicks: stats.flyTicks, planeHits: stats.planeHits, setModel: stats.setmodel, mortarFireAttempts: fired, msgs: stats.msgs.slice(0, 3) }));

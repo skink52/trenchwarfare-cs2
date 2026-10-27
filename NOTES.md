@@ -204,6 +204,27 @@ Done this session (since the first delivery):
   (modelio.SINGLE_LOD). Everything else (revets ~1.2-1.7, sandbags ~0.7, crates ~0.1) keeps LOD1 but LOD_SCALE is now 16
   (thresholds 192-480). Existing vmdls patched in place. Proper fix later: derive LOD1 from LOD0 (decimation) instead of a second generation.
 
+## tw25 (27 Oct ~16:45): soldier player models + per-side first-person arms
+- `tools/soldiers.py <template dir> <addon> name=glb ... --arms gb=glb --arms de=glb [--preview dir]` (+ arms.py, glbskin.py, dmx9.py,
+  preview_soldier.py). Template = Octodad CS2 agent from mg_mario_party (`models/player/custom_player/kuristaja/octodad/cs2/*`: tm_phoenix
+  vmdl with the 14 rebuilt ragdoll joints, body/arms/sleeves/tools_preview DMX). Body: Mixamo bones -> CS2 bones, each piece turned
+  T-pose -> A-pose (arc, hands frame-aligned with the thumb), stretched to the CS2 bone length, LBS by the GLB's own weights, weights
+  renamed and spread over the TWIST bones, 4 influences; scale = head_0 z / Mixamo Head height (~80 u tall with helmet). Arms: unrigged
+  arm pair, skin/cloth split by texture colour (skin = r-g > 1.2(g-b)), roll + side found by chamfer fit of the hand to the template glove,
+  forearm/upper/hand blended segment fits, finger weights copied from the glove after a per-axis box match; hand -> arms.dmx, sleeve ->
+  sleeves.dmx (glove skins keep our sleeve). Upper arm cut 7 u above the elbow. Metal channel dropped (noise).
+- Only `wwi+british+soldier+3d+model.glb` had a usable rig: tw_gb_a. The other three Tripo exports carry weights on 2-4 bones and empty
+  joint transforms (user asked to re-rig/re-export): planned names tw_gb_b (wwi british infantry 3d model 2), tw_de_a (3d modell soldat
+  wehrmacht), tw_de_b (german infantry 3d model). soldiers.py refuses broken rigs; joints_from_weights() handles missing joint transforms.
+- Script: CONFIG.UNIFORMS {2: [], 3: [tw_gb_a]} applied UNIFORM_DELAY 0.25 s after each spawn by slot (`uniform()` in think), `!uniform`
+  per-player opt-out restores the stock agent; UNIFORMS_ON false = off. tw16/17 risk: SetModel on a live pawn once drew the local
+  body in first person (stock agents) - ask the user to check first person + legs.
+- Map: `tools/patch_uniforms.py <user vmap> <out> <addon>` adds cache prop_dynamic tw_uniform_N at z -3600 per model (tw_uniform_1 = tw_gb_a).
+  Built from the user's vmap of 26 Oct 17:56 (mtime 1793002207663).
+- Mock: out/entities.json from dump_entities.py on the patched vmap, HUD xml/css staged from the PC; mock SetModel checks the model exists
+  under out/addon. 24 players 240 s clean, 30 SetModel in 120 s.
+- Next: when the 3 re-exports arrive: soldiers.py for all 4, patch_uniforms.py on the user's newest vmap, fill CONFIG.UNIFORMS[2], tw26.
+
 ## Status 27 Oct (handover to a new workspace)
 - Last delivery tw24 (LODs). Out-of-repo state lived in the old container's out/ (generated vmaps, addon build) and is gone: restage the
   user's current vmap from the PC before any map work, rebuild the addon outputs from tools/ as needed, and prefer tools/patch_vmap.py
