@@ -152,11 +152,50 @@ def move(X, tr):
     return d @ R.T + q
 
 
-def convert_body(T, glb_path, name, out):
+def transfer_weights(P, N, F, donor):
+    """skin weights for a mesh whose export lost them, copied from another Tripo soldier in the same T-pose: both are normalised
+    (arm span, height, torso centre), each vertex takes the inverse-distance mix of its nearest donor vertices (position + a little
+    normal, so an inner arm doesn't pick the torso), then the weights are smoothed over the mesh a few times"""
+    from scipy.spatial import cKDTree
+    gd, md, names, parent, Wdd = load_skinned(donor)
+    def frame_of(X):
+        y0, y1 = X[:, 1].min(), X[:, 1].max(); span = np.abs(X[:, 0]).max()
+        torso = X[np.abs(X[:, 0]) < 0.12 * span]
+        return np.median(torso[:, 0]), y0, np.median(torso[:, 2]), span, y1 - y0
+    def norm(X, f):
+        cx, y0, cz, span, h = f
+        return np.stack([(X[:, 0] - cx) / span, (X[:, 1] - y0) / h, (X[:, 2] - cz) / h], 1)
+    def denorm(X, f):
+        cx, y0, cz, span, h = f
+        return np.stack([X[:, 0] * span + cx, X[:, 1] * h + y0, X[:, 2] * h + cz], 1)
+    fd, ft = frame_of(md['P']), frame_of(P)
+    A = np.hstack([norm(md['P'], fd), 0.03 * md['N']]); B = np.hstack([norm(P, ft), 0.03 * N])
+    Jd = joints_bind(gd, names) or joints_from_weights(md['P'], names, parent, Wdd)
+    Jt = {n: denorm(norm(v[None], fd), ft)[0] for n, v in Jd.items()}
+    dist, nn = cKDTree(A).query(B, k=6)
+    iw = 1 / (dist + 1e-3); iw /= iw.sum(1, keepdims=True)
+    W = (Wdd[nn] * iw[:, :, None]).sum(1)
+    nb = [[] for _ in range(len(P))]
+    for a, b, c in F: nb[a] += [b, c]; nb[b] += [a, c]; nb[c] += [a, b]
+    rows = np.repeat(np.arange(len(P)), [len(x) for x in nb]); cols = np.concatenate([np.array(x, int) for x in nb])
+    from scipy.sparse import csr_matrix
+    Aj = csr_matrix((np.ones(len(rows)), (rows, cols)), shape=(len(P), len(P)))
+    deg = np.asarray(Aj.sum(1)).ravel() + 1e-9
+    for _ in range(3): W = 0.5 * W + 0.5 * (Aj @ W) / deg[:, None]
+    top = np.argsort(-W, 1)[:, 4:]; np.put_along_axis(W, top, 0, 1)
+    W /= W.sum(1, keepdims=True)
+    return names, parent, W, Jt
+
+
+def convert_body(T, glb_path, name, out, donor=None):
     g, m, names, parent, Wd = load_skinned(glb_path)
     used = (Wd.sum(0) > 0).sum()
-    if used < 20: raise SystemExit('%s: only %d bones carry weights - the rig is broken, re-export it' % (glb_path, used))
-    Jb = joints_bind(g, names)
+    if used < 20:
+        if not donor: raise SystemExit('%s: only %d bones carry weights - the rig is broken, re-export it (or give name=glb@donor.glb)' % (glb_path, used))
+        names, parent, Wd, Jb = transfer_weights(m['P'], m['N'], m['F'], donor)
+        print('%s: rig broken (%d bones weighted) - weights and joints copied from %s' % (name, used, os.path.basename(donor)))
+    else:
+        Jb = joints_bind(g, names)
     P = gl2cs(m['P']); N = gl2cs(m['N'])
     Jg = Jb if Jb is not None else joints_from_weights(m['P'], names, parent, Wd)
     J = {n: gl2cs(v[None])[0] for n, v in Jg.items()}
@@ -343,7 +382,9 @@ if __name__ == '__main__':
         ARMS.build(T, path, side, out, preview)
     for name, path in bodies:
         try:
-            V, F, W, s = convert_body(T, path, name, out)
+            donor = None
+            if '@' in path: path, donor = path.split('@', 1)
+            V, F, W, s = convert_body(T, path, name, out, donor)
         except SystemExit as e:
             print('SKIP', e); continue
         write_vmdl(T, out, name, sides.get(name, 'gb' if 'gb' in name else 'de'))

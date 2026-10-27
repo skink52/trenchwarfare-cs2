@@ -226,8 +226,14 @@ Done this session (since the first delivery):
 - 27 Oct 17:10: re-exports of `wwi british infantry 3d model 2` and `german infantry 3d model` have working rigs (65-bone Mixamo, 52
   weighted) -> tw_gb_b, tw_de_b. tw25 zips were rebuilt in place (not yet applied by the user): content_01..05 + map_main with
   tw_uniform_1..3 (tw_de_b, tw_gb_a, tw_gb_b). UNIFORMS {2: [tw_de_b], 3: [tw_gb_a, tw_gb_b]}. Mock clean (110 SetModel in 240 s).
-- Next: `3d modell soldat wehrmacht.glb` still broken (2 bones weighted, same file size as before) -> tw_de_a when re-exported:
-  soldiers.py, patch_uniforms.py on the user's newest vmap, add to UNIFORMS[2], tw26.
+- 17:45: `3d modell soldat wehrmacht.glb` re-exported twice, still all weight on Hips (Tripo's own animations play, its export doesn't).
+  soldiers.py now takes `name=glb@donor.glb`: weights copied from a working Tripo soldier in the same T-pose (normalised by arm span /
+  height / torso centre, 6-NN on position + 0.03 normal, 3 smoothing passes, 4 influences) and the donor's joints mapped across.
+  tw_de_a = wehrmacht @ wwi+british (tw_gb_a's GLB). tw25 rebuilt again (content_01..06 + map_main, tw_uniform_1..4, still unapplied);
+  UNIFORMS {2: [tw_de_a, tw_de_b], 3: [tw_gb_a, tw_gb_b]}. Rebuild command:
+  `soldiers.py <octodad cs2 dir> <addon> tw_gb_a=wwi+british+soldier+3d+model.glb "tw_gb_b=wwi british infantry 3d model 2.glb"
+   "tw_de_b=german infantry 3d model.glb" "tw_de_a=3d modell soldat wehrmacht.glb@wwi+british+soldier+3d+model.glb"
+   --arms "gb=wwi english infantry arms 3d model.glb" --arms "de=wwii german arms 3d model.glb"`.
 
 ## Status 27 Oct (handover to a new workspace)
 - Last delivery tw24 (LODs). Out-of-repo state lived in the old container's out/ (generated vmaps, addon build) and is gone: restage the

@@ -69,7 +69,7 @@ const CONFIG = {
   // after every spawn, picked by player slot. UNIFORMS_ON false = stock agents; players can opt out with !uniform.
   UNIFORMS_ON: true, UNIFORM_DELAY: 0.25,
   UNIFORMS: {
-    2: ["models/tw/players/tw_de_b/tw_de_b.vmdl"],            // German (tw_de_a once its rig is re-exported)
+    2: ["models/tw/players/tw_de_a/tw_de_a.vmdl", "models/tw/players/tw_de_b/tw_de_b.vmdl"],   // German
     3: ["models/tw/players/tw_gb_a/tw_gb_a.vmdl", "models/tw/players/tw_gb_b/tw_gb_b.vmdl"],   // British
   },
   CVARS: ["mp_respawn_on_death_t 1", "mp_respawn_on_death_ct 1", "mp_respawn_immunitytime 0", "mp_freezetime 0",
