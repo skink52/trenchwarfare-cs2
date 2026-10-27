@@ -37,19 +37,20 @@ weapon, rifle, gun, props in hands, T-pose, crossed arms, arms touching body, fu
 
 ## First-person arms
 Settings: PBR on, Smart Low Poly, 8,000 tris, **no Auto Rig** — the mesh is split at the cuff into gloves_arms + sleeves and skinned to the
-stock agent's first-person arm bones (same two-DMX layout as a decompiled agent).
+stock agent's first-person arm bones. v1 (27 Oct) came out forearm + hand only (sleeve ~2.5 hand lengths, baggy cuffs, 2M tris unreduced):
+v2 below asks for the full arm with proportions spelled out. Tripo stands the result upright (hands down) whatever the prompt says.
 
-### CT – British
+### CT – British (v2)
 ```
-Realistic game asset, first-person arms for a WWI British infantry soldier, 1916 Western Front: a matched left and right human arm, each from shoulder to fingertips, no torso, no head. Both arms laid flat side by side, parallel and horizontal, pointing forward, 15 cm gap between them, elbows straight, palms facing down, fingers straight and slightly spread, thumbs apart from fingers, wrists straight, perfectly symmetrical mirror pair. Sleeves of khaki wool serge 1902 Pattern service dress tunic, coarse visible weave, plain pointed cuff ending at the wrist with clean edge, slight fabric folds at the elbow. Bare adult male hands, realistic anatomy, defined knuckles, short fingernails, weathered sun-tanned skin, light dirt and dried mud on fingers and knuckles, mud stains on the cuffs. Clear separation between sleeve cloth and skin at the cuff. High detail on hands and fingers. No gloves, no weapon, no jewellery.
-```
-
-### T – German
-```
-Realistic game asset, first-person arms for a WWII German Wehrmacht infantry soldier, 1943: a matched left and right human arm, each from shoulder to fingertips, no torso, no head. Both arms laid flat side by side, parallel and horizontal, pointing forward, 15 cm gap between them, elbows straight, palms facing down, fingers straight and slightly spread, thumbs apart from fingers, wrists straight, perfectly symmetrical mirror pair. Sleeves of field-grey wool M40 Feldbluse tunic, coarse visible weave, plain straight cuff with small slit and one grey button, ending at the wrist with clean edge, slight fabric folds at the elbow. Bare adult male hands, realistic anatomy, defined knuckles, short fingernails, pale weathered skin, light dirt and dried mud on fingers and knuckles, mud stains on the cuffs. Clear separation between sleeve cloth and skin at the cuff. High detail on hands and fingers. No gloves, no weapon, no jewellery, no insignia.
+Realistic game asset: two complete detached human arms of a WWI British infantry soldier, 1916, like mannequin arms removed at the shoulder joint. Each arm is FULL LENGTH, about 75 cm: rounded shoulder cap, upper arm, elbow, forearm, wrist, hand. Arm length is 8 times hand length; the sleeve from shoulder to wrist is 6 times hand length. Both arms hang straight down side by side, parallel, vertical, 15 cm apart, elbows straight, palms facing inward, fingers straight and slightly spread, thumbs apart. Fitted, slim sleeves of khaki wool serge service dress tunic following the arm shape, not baggy, plain cuff at the wrist, slight folds at the elbow, shoulder seam at the top. Bare adult male hands, realistic anatomy, defined knuckles, short nails, weathered tanned skin, dirt and dried mud on fingers and cuffs. Clean separation between cuff and skin. No torso, no head, no gloves, no weapon, no jewellery.
 ```
 
-### Negative (arms)
+### T – German (v2)
 ```
-torso, head, body, legs, weapon, gun, gloves, fused fingers, extra fingers, missing fingers, bent fingers, fist, merged arms, arms touching, asymmetric, cartoon, stylized, low detail, blurry texture, base, pedestal, rings, watch
+Realistic game asset: two complete detached human arms of a WWII German Wehrmacht infantry soldier, 1943, like mannequin arms removed at the shoulder joint. Each arm is FULL LENGTH, about 75 cm: rounded shoulder cap, upper arm, elbow, forearm, wrist, hand. Arm length is 8 times hand length; the sleeve from shoulder to wrist is 6 times hand length. Both arms hang straight down side by side, parallel, vertical, 15 cm apart, elbows straight, palms facing inward, fingers straight and slightly spread, thumbs apart. Fitted, slim sleeves of field-grey wool M40 Feldbluse tunic following the arm shape, not baggy, plain cuff with one small grey button at the wrist, slight folds at the elbow, shoulder seam at the top. Bare adult male hands, realistic anatomy, defined knuckles, short nails, pale weathered skin, dirt and dried mud on fingers and cuffs. Clean separation between cuff and skin. No torso, no head, no gloves, no weapon, no insignia.
+```
+
+### Negative (arms v2)
+```
+short arms, forearm only, cut off at elbow, baggy sleeves, wide cuffs, torso, head, gloves, weapon, fused fingers, extra fingers, missing fingers, fist, merged arms, arms touching, asymmetric, cartoon, stylized, low detail, base, rings, watch
 ```
