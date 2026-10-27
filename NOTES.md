@@ -204,6 +204,12 @@ Done this session (since the first delivery):
   (modelio.SINGLE_LOD). Everything else (revets ~1.2-1.7, sandbags ~0.7, crates ~0.1) keeps LOD1 but LOD_SCALE is now 16
   (thresholds 192-480). Existing vmdls patched in place. Proper fix later: derive LOD1 from LOD0 (decimation) instead of a second generation.
 
+## Status 27 Oct (handover to a new workspace)
+- Last delivery tw24 (LODs). Out-of-repo state lived in the old container's out/ (generated vmaps, addon build) and is gone: restage the
+  user's current vmap from the PC before any map work, rebuild the addon outputs from tools/ as needed, and prefer tools/patch_vmap.py
+  for small map changes (a full make_map.py run reshuffles random dressing once user edits exist).
+- Open: radar alignment (check `!pos` vs the dot), mortar crew death on firing (console `[tw] blocked ...`), per-section rng in make_map.
+
 ## Next
 - Wait for the user's in-game feedback (flight angles/roll sign, skybox, vertex paint, stock materials on props).
 - Done 03:12: shelter candles + baked warm light, wreck/crater smoke, distant smoke columns, damaged-plane smoke (HP <= 45).
