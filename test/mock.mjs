@@ -18,6 +18,7 @@ class Ent {
   constructor(name, cls, pos, ang) { this.name = name; this.cls = cls; this.pos = { ...pos }; this.ang = ang || { pitch: 0, yaw: 0, roll: 0 }; this.valid = true; }
   IsValid() { return this.valid; } GetAbsOrigin() { return { ...this.pos }; } GetAbsAngles() { return { ...this.ang }; }
   GetClassName() { return this.cls; } GetEntityName() { return this.name; }
+  Remove() { this.valid = false; this.removed = true; stats.removed = (stats.removed || 0) + 1; } SetModelScale(v) { if (!Number.isFinite(v) || v <= 0) throw new Error('bad scale ' + v); this.scale = v; }
   Teleport(o) { if (o.position) this.pos = { ...o.position }; if (o.angles) this.ang = { ...o.angles }; stats.teleports++; }
   Move(o) { if (o.position) { for (const k of ['x', 'y', 'z']) if (!Number.isFinite(o.position[k])) throw new Error('bad Move ' + JSON.stringify(o)); this.pos = { ...o.position }; } if (o.angles) this.ang = { ...o.angles }; stats.moves = (stats.moves || 0) + 1; }
   SetParent(p) { this.parent = p; } GetParent() { return this.parent; }
@@ -70,7 +71,7 @@ const Instance = {
   Msg: (m) => stats.msgs.push(String(m)), GetGameTime: () => time, SetThink: (f) => { Instance._think = f; }, SetNextThink: (t) => { Instance._next = t; },
   OnActivate: (f) => hooks.activate = f, OnRoundStart: (f) => hooks.round = f, OnPlayerReset: (f) => hooks.reset = f, OnPlayerDisconnect: (f) => hooks.disc = f,
   OnPlayerKill: (f) => hooks.kill = f, OnPlayerChat: (f) => hooks.chat = f, OnBulletImpact: (f) => hooks.bullet = f, OnModifyPlayerDamage: (f) => hooks.mod = f,
-  FindEntityByName: (n) => world.get(n), GetPlayerController: (s) => ctls[s],
+  FindEntityByName: (n) => world.get(n), FindEntitiesByName: (n) => (world.has(n) && !world.get(n).removed ? [world.get(n)] : []), GetPlayerController: (s) => ctls[s],
   EntFireAtName: (o) => { stats.fires[o.input] = (stats.fires[o.input] || 0) + 1; if (!world.has(o.name) && !o.name.startsWith('mortar_')) throw new Error('EntFire at missing entity ' + o.name); },
   ServerCommand: () => {},
   TraceLine: (o) => {
@@ -152,4 +153,4 @@ fs.unlinkSync(tmp);
 const D = globalThis.__twDebug; const rc = {}; for (const p of D.players.values()) rc[p.team + ':' + p.role] = (rc[p.team + ':' + p.role] || 0) + 1;
 console.log('roles', JSON.stringify(rc), 'crews', JSON.stringify(D.crews[3].map(c => [c.a, c.b, c.loaded, !!c.target, c.impacts.length])));
 const roles = {}; // count from HUD would need introspection; report activity instead
-console.log(JSON.stringify({ hud: stats.hud, vars: stats.vars, fires: stats.fires, dmg: stats.dmg, kills: stats.kills, teleports: stats.teleports, moves: stats.moves, cam: stats.cam, flyTicks: stats.flyTicks, planeHits: stats.planeHits, setModel: stats.setmodel, mortarFireAttempts: fired, msgs: stats.msgs.slice(0, 3) }));
+console.log(JSON.stringify({ hud: stats.hud, vars: stats.vars, fires: stats.fires, dmg: stats.dmg, kills: stats.kills, teleports: stats.teleports, moves: stats.moves, cam: stats.cam, flyTicks: stats.flyTicks, planeHits: stats.planeHits, setModel: stats.setmodel, removed: stats.removed, mortarFireAttempts: fired, msgs: stats.msgs.slice(0, 3) }));

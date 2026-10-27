@@ -235,6 +235,17 @@ Done this session (since the first delivery):
    "tw_de_b=german infantry 3d model.glb" "tw_de_a=3d modell soldat wehrmacht.glb@wwi+british+soldier+3d+model.glb"
    --arms "gb=wwi english infantry arms 3d model.glb" --arms "de=wwii german arms 3d model.glb"`.
 
+## tw26 (27 Oct ~19:40): hidden bomb sight, areas that open during the round
+- Bomb sight: tw_bombsight is now ONE-SIDED (faces +z; fx_models.py quads/ring/bar `double=False`). The script holds it on the line from
+  the chase camera (plane pos + horizontal f * CAM_OFFSET.x, + CAM_OFFSET.z) to the landing point, AIR.BSIGHT_RAISE 260 above the
+  ground there (at most 60 % of the way), its +z pointing at the camera (pitch = acos(d.z/|d|), yaw = atan2) and SetModelScale(1-k) so it
+  looks the size of a ground ring. Ground players below see the culled back face. Gun-sight pip unchanged.
+- Unlocks: CONFIG.UNLOCKS woodsopen (15 kills / 240 s) and undergroundopen (30 kills / 480 s), whichever first; kills = enemy kills by
+  anyone since round start (roundKills). tickUnlocks: effects() + Remove() on every FindEntitiesByName match, chat + toast to all.
+  Map entities come back each round. User's undergroundopen = 2 prop_dynamic revet_planks_broken at the sap portals; their woods
+  blockers were prop_statics in vis group woodsopen: `tools/patch_unlocks.py` turns those into prop_dynamic targetname woodsopen.
+- Built from the user's vmap of 27 Oct 19:17 (mtime 1793090872963), tw25 already applied. Mock 600 s clean (both areas opened).
+
 ## Status 27 Oct (handover to a new workspace)
 - Last delivery tw24 (LODs). Out-of-repo state lived in the old container's out/ (generated vmaps, addon build) and is gone: restage the
   user's current vmap from the PC before any map work, rebuild the addon outputs from tools/ as needed, and prefer tools/patch_vmap.py

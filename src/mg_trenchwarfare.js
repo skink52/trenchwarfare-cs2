@@ -59,6 +59,7 @@ const CONFIG = {
     BOX_X: 6500, BOX_Y: 5500, ALT_MAX: 5000, ALT_MIN: 120,
     GUN_INTERVAL: 0.09, GUN_DAMAGE: 16, GUN_RANGE: 5200, GUN_SPREAD: 0.014, GUN_FROM: 150,
     BOMBS: 2, BOMB_REARM: 18, BOMB_RADIUS: 420, BOMB_DAMAGE: 240, GRAVITY: 800,
+    BSIGHT_RAISE: 260,                           // bomb-sight ring held this far above the landing point on the line to the camera (one-sided, faces the camera)
     HIT_SCALE: 0.4, HIT_MIN: 12,                 // rifle bullets on a plane: weapon damage x scale (at least HIT_MIN) to the pilot
     CRASH_CREDIT: 10,                            // seconds a hit keeps kill credit for a crash
     CAM_FOLLOW: { x: 0, y: 0, z: 70 }, CAM_OFFSET: { x: -380, y: 0, z: 70 },
@@ -72,6 +73,12 @@ const CONFIG = {
     2: ["models/tw/players/tw_de_a/tw_de_a.vmdl", "models/tw/players/tw_de_b/tw_de_b.vmdl"],   // German
     3: ["models/tw/players/tw_gb_a/tw_gb_a.vmdl", "models/tw/players/tw_gb_b/tw_gb_b.vmdl"],   // British
   },
+  // blocked areas opened during the round: every map entity with this targetname is blown open (removed + explosion) at whichever
+  // comes first, enemy kills by anyone since the round started or seconds since the round started. Map entities return every round.
+  UNLOCKS: [
+    { name: "woodsopen", kills: 15, time: 240, msg: "THE WAY TO THE WOOD IS OPEN - ladder at the north end of the fire trench" },
+    { name: "undergroundopen", kills: 30, time: 480, msg: "THE MINE GALLERIES ARE OPEN - saps at the south end of the support trench" },
+  ],
   CVARS: ["mp_respawn_on_death_t 1", "mp_respawn_on_death_ct 1", "mp_respawn_immunitytime 0", "mp_freezetime 0",
           "mp_roundtime 60", "mp_buy_anywhere 0", "mp_buytime 0", "mp_death_drop_gun 0", "mp_weapons_allow_map_placed 1",
           "mp_free_armor 0", "mp_solid_teammates 1", "bot_quota_mode normal"],
@@ -392,7 +399,19 @@ function drawSights(a, pawn) {
     try { ac.gsight.Teleport({ position: vadd(s, a.f, d), angles: angOf(a.f) }); } catch (e) {}
   }
   if (ac.bsight) {
-    if (a.bombs > 0) { const l = bombLanding(a); try { ac.bsight.Teleport({ position: l, angles: { pitch: 0, yaw: Math.atan2(a.f.y, a.f.x) * 180 / Math.PI, roll: 0 } }); } catch (e) {} }
+    if (a.bombs > 0) {
+      // the ring sits on the line from the chase camera to the landing point, BSIGHT_RAISE above the ground, facing the camera and
+      // scaled down by its distance: the pilot sees it on the landing point, players on the ground below see its undrawn back face
+      const l = bombLanding(a), h = Math.hypot(a.f.x, a.f.y) || 1, C = A.CAM_OFFSET;
+      const cam = v3(a.pos.x + a.f.x / h * C.x, a.pos.y + a.f.y / h * C.x, a.pos.z + C.z);
+      const d = v3(cam.x - l.x, cam.y - l.y, cam.z - l.z), D = vlen(d) || 1;
+      const k = d.z > 1 ? Math.min(A.BSIGHT_RAISE / d.z, 0.6) : 0;
+      const pitch = Math.acos(Math.max(-1, Math.min(1, d.z / D))) * 180 / Math.PI, yaw = Math.atan2(d.y, d.x) * 180 / Math.PI;
+      try {
+        ac.bsight.Teleport({ position: vadd(l, d, k), angles: { pitch, yaw, roll: 0 } });
+        ac.bsight.SetModelScale(Math.max(0.2, 1 - k));
+      } catch (e) {}
+    }
     else park(ac, ac.bsight);
   }
 }
@@ -685,6 +704,20 @@ function swapRifle(p, pawn) {
 }
 // cosmetic shell bursts and dirt showers in no man's land, never near a player
 let nextAmbient = 0;
+let roundStart = 0, roundKills = 0; const unlocked = new Set();
+function tickUnlocks(t) {
+  for (const u of CONFIG.UNLOCKS) {
+    if (unlocked.has(u.name) || (roundKills < u.kills && t - roundStart < u.time)) continue;
+    unlocked.add(u.name);
+    let n = 0;
+    for (const e of Instance.FindEntitiesByName(u.name)) {
+      try { if (!e.IsValid()) continue; effects(vadd(e.GetAbsOrigin(), v3(0, 0, 1), 24), false); e.Remove(); n++; } catch (err) {}
+    }
+    if (!n) continue;
+    say("[tw] " + u.msg);
+    for (const p of players.values()) toast(p, u.msg, 7);
+  }
+}
 function tickAmbient() {
   const t = now(); if (t < nextAmbient) return;
   nextAmbient = t + CONFIG.AMBIENT_MIN + Math.random() * (CONFIG.AMBIENT_MAX - CONFIG.AMBIENT_MIN);
@@ -921,6 +954,7 @@ function think() {
   tickBombs(dt);
   tickTracers(dt);
   tickAmbient();
+  tickUnlocks(t);
   for (let s = 0; s < 64; s++) {
     const ctl = Instance.GetPlayerController(s);
     if (!ctl) continue;
@@ -1010,6 +1044,7 @@ Instance.OnActivate(() => {
   Instance.SetNextThink(now());
 });
 Instance.OnRoundStart(() => {
+  roundStart = now(); roundKills = 0; unlocked.clear();
   points = null; shells.length = 0; bombs.length = 0; tracers.length = 0;
   for (const p of players.values()) p.air = undefined;
   for (const team of [T, CT]) for (const c of crews[team]) { c.loaded = false; c.loader = -1; c.target = null; c.impacts = []; c.cooldown = 0; }
@@ -1048,6 +1083,7 @@ Instance.OnPlayerKill(({ player, attacker }) => {
   const as = slotOfPawn(ap); if (as < 0) return;
   const a = P(as);
   if (ap.GetTeamNumber() === victim.GetTeamNumber()) return;
+  roundKills++;
   a.kills++; a.streak++; a.merit++;
   if (a.role === "mortar") { a.mortarKills++; toast(a, "Direct hit!", 2); }
   if (a.role === "infantry" && !a.upgraded && a.streak >= CONFIG.STREAK_UPGRADE && ap.IsAlive()) {

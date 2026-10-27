@@ -31,7 +31,7 @@ Layer0
     return f'{REL_T}/{name}.vmat'
 
 
-def ring(r0, r1, n=48, z=0.0, axis='z'):
+def ring(r0, r1, n=48, z=0.0, axis='z', double=True):
     m = geo.Mesh()
     th = np.linspace(0, 2 * np.pi, n + 1)
     V = []; F = []
@@ -39,20 +39,20 @@ def ring(r0, r1, n=48, z=0.0, axis='z'):
         a, b = th[k], th[k + 1]
         q = [(r0 * math.cos(a), r0 * math.sin(a)), (r1 * math.cos(a), r1 * math.sin(a)), (r1 * math.cos(b), r1 * math.sin(b)), (r0 * math.cos(b), r0 * math.sin(b))]
         i0 = len(V); V += q; F += [(i0, i0 + 1, i0 + 2), (i0, i0 + 2, i0 + 3)]
-    return quads(V, F, z, axis)
+    return quads(V, F, z, axis, double)
 
 
-def quads(V2, F, z, axis):
+def quads(V2, F, z, axis, double=True):
     V = np.array([(x, y, z) for x, y in V2], float)
     if axis == 'x': V = V[:, [2, 0, 1]]                     # ring in the YZ plane, facing +x
     F = np.array(F, np.int64)
-    V = np.concatenate([V, V]); F = np.concatenate([F, F[:, ::-1] + len(V2)])     # double-sided
+    if double: V = np.concatenate([V, V]); F = np.concatenate([F, F[:, ::-1] + len(V2)])     # double-sided
     m = geo.Mesh(); m.V = V; m.N = np.tile([0, 0, 1.0] if axis == 'z' else [1.0, 0, 0], (len(V), 1)); m.F = F
     return m
 
 
-def bar(x0, y0, x1, y1, z=0.0, axis='z'):
-    return quads([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], [(0, 1, 2), (0, 2, 3)], z, axis)
+def bar(x0, y0, x1, y1, z=0.0, axis='z', double=True):
+    return quads([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], [(0, 1, 2), (0, 2, 3)], z, axis, double)
 
 
 def merge(ms):
@@ -86,8 +86,10 @@ write('tw_bomb', bomb, 'materials/de_overpass/metal/rusty_metal_1.vmat', uv=bomb
 # tracer: a glowing streak behind its head (origin = head)
 tr = geo.tube([(-110, 0, 0), (0, 0, 0)], [0.5, 1.4], sides=6, mat='m')
 write('tw_tracer', tr, emissive('fx_tracer', (255, 196, 90), 40.0))
-# bomb sight: ground ring with ticks
-bs = merge([ring(108, 118), ring(14, 20)] + [bar(*b) for b in ((126, -3, 168, 3), (-168, -3, -126, 3), (-3, 126, 3, 168), (-3, -168, 3, -126))])
+# bomb sight: ring with ticks, ONE-SIDED facing +z: the script holds it between the pilot's camera and the landing point, facing the
+# camera, a few hundred units up - players on the ground below see its back face, which isn't drawn
+bs = merge([ring(108, 118, double=False), ring(14, 20, double=False)] +
+           [bar(*b, double=False) for b in ((126, -3, 168, 3), (-168, -3, -126, 3), (-3, 126, 3, 168), (-3, -168, 3, -126))])
 write('tw_bombsight', bs, emissive('fx_bombsight', (255, 70, 40), 12.0))
 # gun sight: ring + cross facing +x (towards a camera behind the plane)
 gs = merge([ring(34, 38, axis='x'), ring(0.0, 4, n=12, axis='x')] +
