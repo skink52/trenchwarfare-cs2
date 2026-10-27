@@ -223,7 +223,11 @@ Done this session (since the first delivery):
   Built from the user's vmap of 26 Oct 17:56 (mtime 1793002207663).
 - Mock: out/entities.json from dump_entities.py on the patched vmap, HUD xml/css staged from the PC; mock SetModel checks the model exists
   under out/addon. 24 players 240 s clean, 30 SetModel in 120 s.
-- Next: when the 3 re-exports arrive: soldiers.py for all 4, patch_uniforms.py on the user's newest vmap, fill CONFIG.UNIFORMS[2], tw26.
+- 27 Oct 17:10: re-exports of `wwi british infantry 3d model 2` and `german infantry 3d model` have working rigs (65-bone Mixamo, 52
+  weighted) -> tw_gb_b, tw_de_b. tw25 zips were rebuilt in place (not yet applied by the user): content_01..05 + map_main with
+  tw_uniform_1..3 (tw_de_b, tw_gb_a, tw_gb_b). UNIFORMS {2: [tw_de_b], 3: [tw_gb_a, tw_gb_b]}. Mock clean (110 SetModel in 240 s).
+- Next: `3d modell soldat wehrmacht.glb` still broken (2 bones weighted, same file size as before) -> tw_de_a when re-exported:
+  soldiers.py, patch_uniforms.py on the user's newest vmap, add to UNIFORMS[2], tw26.
 
 ## Status 27 Oct (handover to a new workspace)
 - Last delivery tw24 (LODs). Out-of-repo state lived in the old container's out/ (generated vmaps, addon build) and is gone: restage the
