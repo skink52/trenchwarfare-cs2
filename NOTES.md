@@ -275,6 +275,19 @@ Done this session (since the first delivery):
   (Tripo sleeves + their materials restored from backups). soldiers.py `--bare-hands` (with --arms for the sleeves) reproduces this.
   Written straight into the addon; arms_stock stays as the fallback (tw28).
 
+## tw30 (28 Oct ~19:20): default T/CT gloves in our sleeves, no cuff clipping
+- User: use the default CT gloves and default T gloves on the respective arms, gloves must not clip through the sleeve cuff.
+- `tools/fit_gloves.py <stock arms dmx> <sleeves dmx> <out arms> <out sleeves>`: keeps the stock glove mesh untouched (bare forearm
+  piece + its jointList dag dropped) and eases the SLEEVE cuff out over it: glove profile per height/direction around the forearm
+  bone (max radius, max-filtered +-0.5 u / +-10 deg), sleeve vertices below the glove top pushed to profile + 0.3 u, smoothed over the
+  sleeve, faded out 2 u above; seam vertices welded first (else cracks); then glove edges are ray-tested against the sleeve
+  triangles and the margin grows where any cross. Shrinking the glove instead (first attempt) left jagged cuffs: the Tripo hem is
+  cut diagonally, so part of the glove cuff is visible.
+- T: tm_phoenix default glove (glove_fullfinger, from arms_stock) + de sleeves: 0 crossing edges (was 180). Written:
+  arms_de/arms.dmx + arms_de/sleeves.dmx, tw_de_a/b vmdls point there.
+- CT: needs the default CT agent's (ctm_sas) first-person gloves from the game VPK - waiting for the user to link game\csgo.
+  gb vmdls still on hands_bare (tw29) until then.
+
 ## Status 27 Oct (handover to a new workspace)
 - Last delivery tw24 (LODs). Out-of-repo state lived in the old container's out/ (generated vmaps, addon build) and is gone: restage the
   user's current vmap from the PC before any map work, rebuild the addon outputs from tools/ as needed, and prefer tools/patch_vmap.py
