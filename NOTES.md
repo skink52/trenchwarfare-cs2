@@ -291,6 +291,26 @@ Done this session (since the first delivery):
   checked against phoenix's: dot p5 0.998). fit_gloves with gb sleeves: 221 -> 0 crossing edges. arms_gb/arms.dmx + sleeves.dmx
   written, tw_gb_a/b vmdls point there. hands_bare (tw29) is now unused.
 
+## tw31 (28 Oct ~21:20): T soldier cracks, FPS over no man's land
+- "Second T model has invisible bits": tw_de_a (weights copied from a donor rig) has split vertices along every seam and the copies
+  got slightly different weights, so the T->A re-pose pulled them apart (18,993 open edges vs ~100 on tw_de_b; median gap 0.02 u, up
+  to ~0.4 u, worst at shoulders/back straps). `tools/weld_cracks.py <body dmx> <out> [tol]`: merges boundary vertices only (closest
+  pairs first, group size capped at tol, never two corners of one triangle), averages their weights. Passes 0.5, 0.9, 1.4 -> 199 open
+  edges (rest are strap edges). Written straight to models/tw/players/tw_de_a/tw_de_a_body.dmx. tw_de_b checked: closed, no flips.
+  Fix at the source for next time: weld GLB vertices before the donor weight transfer in soldiers.py.
+- FPS looking over no man's land: ~17M prop triangles drawn. LOD_SCALE 16 (tw22-24) put every LOD1 switch at thresholds 192-480,
+  i.e. effectively never, because the generated LOD1s weren't copies of LOD0; worst: duckboard_128 x314 @ 9.5k, sandbag walls,
+  revets, fences @ 19.7k, ext CC-BY props with no LODs (petrol can 28.9k, Stahlhelm 27.5k, Renault FT 54.8k).
+  `tools/lod_decimate.py <addon> <out> <model dirs> --keep-lod1 wire_fence_a,wire_fence_b,wire_coil`: LOD1-4 decimated from LOD0
+  (vertex clustering + quadric per cell, per material; corners keep their face's normal, UVs re-projected through the face's own UV
+  map so tiled stock textures hold), cell = largest within ~1 px at the switch distance (MAX_CELL 0.5/1.6/3.2/6.5) aiming at
+  35/12/4/1.5 % of LOD0; thresholds 20/60/120/240. Barbed wire keeps its generated LOD1 at 30. 35 models (report in the delivery);
+  estimate from the fire trench 17M -> ~4M (assumes threshold ~ distance/15). Delivered as tw31_content_01.zip (new *_lodNd.smd +
+  vmdls; old _lod1.smd files stay unused). Generator: after build_all_props, run lod_decimate on the rebuilt models (modelio still
+  writes LOD_SCALE x16 single-LOD vmdls).
+- Not changed yet: fog particles in NML (15 vietnam_fog_ground + 4 vietnam_fog_volume_1024 = overdraw), every prop casts shadows,
+  stock poplar/maple vistas (~1100 in the main map) - next suspects if FPS is still low (`r_drawparticles 0` to test).
+
 ## Status 27 Oct (handover to a new workspace)
 - Last delivery tw24 (LODs). Out-of-repo state lived in the old container's out/ (generated vmaps, addon build) and is gone: restage the
   user's current vmap from the PC before any map work, rebuild the addon outputs from tools/ as needed, and prefer tools/patch_vmap.py
