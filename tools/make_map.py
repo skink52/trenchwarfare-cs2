@@ -904,16 +904,19 @@ for _ in range(160):
 print('woodland: %d trees' % nt)
 
 # ---------------------------------------------------------------- fog banks drifting over no man's land
+# tw32: off - the fog sprites' overdraw cost the whole frame rate looking across (r_drawparticles 0 fixed it); the mist is height fog
+# + volumetric fog now (env_cubemap_fog / tw_vfog below). The rng calls stay so nothing generated after this moves.
+FOG_PARTICLES = False
 for x in (-1024.0, 0.0, 1024.0):
     for y in np.arange(-3072, 3073, 1024.0):
         r_ = rng.uniform(-120, 120), rng.uniform(-120, 120)
         if x != 0.0 or abs(y) % 2048 != 1024: continue        # thinned: a few banks down the middle only (players must see across, with effort)
-        ent('info_particle_system', (x + r_[0], y + r_[1], gz(x, y) - 20), group=GROUP,
+        if FOG_PARTICLES: ent('info_particle_system', (x + r_[0], y + r_[1], gz(x, y) - 20), group=GROUP,
             effect_name='particles/maps/gg_vietnam/vietnam_fog_volume_1024.vpcf', start_active='1')
 for _ in range(30):
     x = rng.uniform(-1450, 1450); y = rng.uniform(-3300, 3300)
     if _ % 2: continue
-    ent('info_particle_system', (x, y, gz(x, y) + 8), group=GROUP, effect_name='particles/maps/gg_vietnam/vietnam_fog_ground.vpcf', start_active='1')
+    if FOG_PARTICLES: ent('info_particle_system', (x, y, gz(x, y) + 8), group=GROUP, effect_name='particles/maps/gg_vietnam/vietnam_fog_ground.vpcf', start_active='1')
 
 # ---------------------------------------------------------------- infantry spawns (teleport destinations) and heal points
 for s in (-1, 1):
@@ -989,12 +992,12 @@ ent('point_soundevent', (0, 0, LZ + 200), group=GROUP, targetname='tw_ambience',
 clone('light_environment', (0, 0, 2000), (55, 145, 0), targetname='tw_sun', color='196 202 210', brightness='1.6', castshadows='1', directlight='3',
       skycolor='150 160 175', skyintensity='1.6', fog='1', fogstrength='0.6')
 clone('env_sky', (64, 0, 2000), targetname='sky', skyname='materials/skybox/sky_overcast_01.vmat', tint_color='190 196 205', brightnessscale='0.9')
-clone('env_cubemap_fog', (128, 0, 2000), cubemapfogstartdistance='400', cubemapfogenddistance='7500', cubemapfogfalloffexponent='1.25',
+clone('env_cubemap_fog', (128, 0, 2000), cubemapfogstartdistance='250', cubemapfogenddistance='7500', cubemapfogfalloffexponent='1.25',
       cubemapheightfog='1', cubemapfogheightstart='300.0', cubemapfogheightend='2600.0', cubemapfogheightexponent='1.0', cubemapfogmaxopacity='0.85',
       cubemapfogskyentity='sky')
-ent('env_volumetric_fog_controller', (192, 0, 2000), group=GROUP, targetname='tw_vfog', IsMaster='1', FogStrength='0.6', TintColor='205 210 215',
+ent('env_volumetric_fog_controller', (192, 0, 2000), group=GROUP, targetname='tw_vfog', IsMaster='1', FogStrength='0.8', TintColor='205 210 215',
     DrawDistance='1600', FadeInStart='40', FadeInEnd='300', FadeSpeed='2', IndirectEnabled='1', IndirectStrength='1.0', IndirectVoxelDim='256',
-    NoiseSpeed='0.15', NoiseStrength='0.55', NoiseScale='.004 .004 .01', volume_depth_override='0', volume_first_slice_thickness='0')
+    NoiseSpeed='0.15', NoiseStrength='0.7', NoiseScale='.004 .004 .01', volume_depth_override='0', volume_first_slice_thickness='0')
 clone('post_processing_volume', (256, 0, 2000), postprocessing='postprocess/%s.vpost' % NAME, master='1', minexposure='0.6', maxexposure='1.8',
       enableexposure='1', fadetime='1.0', spawnflags='4097')
 clone('env_combined_light_probe_volume', (0, 0, 120), box_mins='-3900 -3700 -260', box_maxs='3900 4500 520', voxel_size='64.0', targetname='bf_probe')

@@ -311,6 +311,14 @@ Done this session (since the first delivery):
 - Not changed yet: fog particles in NML (15 vietnam_fog_ground + 4 vietnam_fog_volume_1024 = overdraw), every prop casts shadows,
   stock poplar/maple vistas (~1100 in the main map) - next suspects if FPS is still low (`r_drawparticles 0` to test).
 
+## tw32 (28 Oct ~22:00): fog without particles
+- User: `r_drawparticles 0` fully fixed the FPS drop looking over no man's land. Always-on fog sprites were the cost: 15
+  vietnam_fog_ground + 4 vietnam_fog_volume_1024 (overdraw). `tools/patch_fog.py <user vmap> <out>` removes those 19 and leans on the
+  cheap fog: env_cubemap_fog start 400 -> 250, tw_vfog FogStrength 0.6 -> 0.8, NoiseStrength 0.55 -> 0.7. Kept: 6 distant
+  ambient_smokestack columns, 4 wreck smoke + 3 fire smoke (always on), event effects. Built from the user's vmap of 28 Oct 21:57
+  (mtime 1793186256612); tw32_map_main.zip in the addon root. make_map.py: FOG_PARTICLES = False (rng calls kept), same fog values.
+- If drops remain: the 13 always-on smoke columns are next (same overdraw kind).
+
 ## Status 27 Oct (handover to a new workspace)
 - Last delivery tw24 (LODs). Out-of-repo state lived in the old container's out/ (generated vmaps, addon build) and is gone: restage the
   user's current vmap from the PC before any map work, rebuild the addon outputs from tools/ as needed, and prefer tools/patch_vmap.py
