@@ -285,8 +285,11 @@ Done this session (since the first delivery):
   cut diagonally, so part of the glove cuff is visible.
 - T: tm_phoenix default glove (glove_fullfinger, from arms_stock) + de sleeves: 0 crossing edges (was 180). Written:
   arms_de/arms.dmx + arms_de/sleeves.dmx, tw_de_a/b vmdls point there.
-- CT: needs the default CT agent's (ctm_sas) first-person gloves from the game VPK - waiting for the user to link game\csgo.
-  gb vmdls still on hands_bare (tw29) until then.
+- CT (20:15): ctm_sas (CS2's default CT) first-person glove = glove_hardknuckle_black, pulled from pak01_003 with cs2mapping
+  `create/s2/fp_gloves.mjs` (tm_phoenix extraction matched the S2V decompile exactly: positions, UVs as-is, normals, weights) and
+  written onto the template skeleton by `tools/agent_gloves.py <glove.json> <arms_stock/arms.dmx> <out>` (UV-derived tangents,
+  checked against phoenix's: dot p5 0.998). fit_gloves with gb sleeves: 221 -> 0 crossing edges. arms_gb/arms.dmx + sleeves.dmx
+  written, tw_gb_a/b vmdls point there. hands_bare (tw29) is now unused.
 
 ## Status 27 Oct (handover to a new workspace)
 - Last delivery tw24 (LODs). Out-of-repo state lived in the old container's out/ (generated vmaps, addon build) and is gone: restage the
