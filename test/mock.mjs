@@ -108,8 +108,12 @@ for (let step = 0; step < SECONDS * 64; step++) {
     const p = c.pawn; p.keys = 0;
     if (c.bot || p.hp <= 0) continue;
     const pr = globalThis.__twDebug && globalThis.__twDebug.players.get(c.slot);
+    if (pr && pr.air && !c.flyStart) c.flyStart = time;
+    if (pr && !pr.air && c.flyStart) { (stats.flights = stats.flights || []).push(time - c.flyStart); c.flyStart = 0; }
     if (pr && pr.air) {
       stats.flyTicks = (stats.flyTicks || 0) + 1;
+      if (process.env.DEBUGFLY && step % 32 === 0 && c.slot === +process.env.DEBUGFLY) console.log('t', time.toFixed(1), 'z', pr.air.pos.z.toFixed(0), 'fz', pr.air.f.z.toFixed(3), 'v', pr.air.speed.toFixed(0), 'eye', JSON.stringify(p.eye), 'pos', pr.air.pos.x.toFixed(0), pr.air.pos.y.toFixed(0));
+      if (pr.air.pos && Number.isFinite(pr.air.pos.z)) { stats.zMin = Math.min(stats.zMin ?? 1e9, pr.air.pos.z); stats.zMax = Math.max(stats.zMax ?? -1e9, pr.air.pos.z); }
       p.eye = { pitch: 10 * Math.sin(time * 0.7 + c.slot), yaw: (c.team === 3 ? 180 : 0) + 70 * Math.sin(time * 0.3 + c.slot), roll: 0 };
       p.keys = IN.ATTACK | (Math.floor(time) % 4 === 0 ? IN.RIGHT : Math.floor(time) % 4 === 2 ? IN.LEFT : 0) | (Math.floor(time * 4) % 37 === 0 ? IN.ATTACK2 : 0) | (time % 10 < 5 ? IN.FORWARD : 0);
       continue;
@@ -167,4 +171,4 @@ fs.unlinkSync(tmp);
 const D = globalThis.__twDebug; const rc = {}; for (const p of D.players.values()) rc[p.team + ':' + p.role] = (rc[p.team + ':' + p.role] || 0) + 1;
 console.log('roles', JSON.stringify(rc), 'crews', JSON.stringify(D.crews[3].map(c => [c.a, c.b, c.loaded, !!c.target, c.impacts.length])));
 const roles = {}; // count from HUD would need introspection; report activity instead
-console.log(JSON.stringify({ hud: stats.hud, vars: stats.vars, fires: stats.fires, dmg: stats.dmg, kills: stats.kills, teleports: stats.teleports, moves: stats.moves, cam: stats.cam, flyTicks: stats.flyTicks, planeHits: stats.planeHits, setModel: stats.setmodel, removed: stats.removed, mortarFireAttempts: fired, leashOk: stats.leashOk, msgs: stats.msgs.slice(0, 3) }));
+console.log(JSON.stringify({ hud: stats.hud, vars: stats.vars, fires: stats.fires, dmg: stats.dmg, kills: stats.kills, teleports: stats.teleports, moves: stats.moves, cam: stats.cam, flyTicks: stats.flyTicks, planeHits: stats.planeHits, setModel: stats.setmodel, removed: stats.removed, mortarFireAttempts: fired, leashOk: stats.leashOk, flights: stats.flights ? [stats.flights.length, +(stats.flights.reduce((x, y) => x + y, 0) / stats.flights.length).toFixed(1)] : null, zRange: [Math.round(stats.zMin), Math.round(stats.zMax)], errors: stats.msgs.filter(m => m.includes('error')).slice(0, 3), msgs: stats.msgs.slice(0, 3) }));

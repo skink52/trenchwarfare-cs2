@@ -52,8 +52,17 @@ const CONFIG = {
   // arcade flight (mouse aim: the plane turns toward where the pilot looks; W/S throttle, A/D roll, LMB guns, RMB bomb)
   AIR: {
     SPAWN_ALT: 1100, V_STALL: 420, V_MIN: 520, V_CRUISE: 1150, V_MAX: 1650, ACCEL: 0.6, DIVE_GAIN: 520,
-    TURN: 62, TURN_SLOW: 0.45, BANK_MAX: 65, ROLL_SIGN: 1, PITCH_SIGN: -1, MODEL_YAW: 0,     // models' noses point at +x (Source pitch: positive = nose down)
-    ROLL_RATE: 160, ROLL_MAX: 85, BANK_YAW: 55, BANK_BOOST: 0.9,              // A/D roll; banked into the turn = faster turn
+    TURN_SLOW: 0.45, ROLL_SIGN: 1, PITCH_SIGN: -1, MODEL_YAW: 0,              // models' noses point at +x (Source pitch: positive = nose down)
+    // tw33 flight feel ported from the Dogfight addon (steerAim / turnRate / flightStick / boundsWeight / anglesNear / cameraRay),
+    // retuned for biplanes: the nose slerps toward the aim (proportional, capped by a speed-dependent turn rate), the bank comes
+    // from the yaw rate, A/D add a free roll (no auto level) that never fights the mouse.
+    STEER: { RATE: 62, REF_SPEED: 1150, MIN_SPEED: 300, MIN_RATE: 40, MAX_RATE: 75, GAIN: 4, PITCH_LIMIT: 75,
+             BANK_GAIN: 0.8, BANK_MAX: 65, BANK_RATE: 150 },
+    ROLL: { RATE: 120, IN: 0.15, OUT: 0.10 },
+    BOUNDS: { AHEAD: 1.5, HARD: 600, HARD_Z: 400, FAR: 1500, HOME_Z: 2000 },     // soft walls = BOX_X / BOX_Y / ALT_MAX
+    NOSE: 90, PULLUP_EVERY: 8, PULLUP_SECONDS: 1.5,
+    GUN_GIMBAL: 3,                               // guns converge on the crosshair within this many degrees of the nose
+    CAM_BACK_FAST: 440, CAM_TAU: 0.35, CAM_MIN_STEP: 4, CAM_EVERY: 2 / 64, CAM_SNAP: 6, CAM_RETURN: 0.3,   // camera eases back with speed
     GUN_AMMO: 500, GUN_RELOAD: 6, SMOKE_HP: 45,
     COCKPIT: { back: -40, up: 84 }, VIEW_DEFAULT: "chase",                     // "cockpit" also supported (camera at the pilot's head)
     BOX_X: 6500, BOX_Y: 5500, ALT_MAX: 5000, ALT_MIN: 120,
@@ -415,18 +424,17 @@ function bombLanding(a) {
 }
 function drawSights(a, pawn) {
   const A = CONFIG.AIR, ac = a.ac;
-  if (ac.gsight) {
-    const s = v3(a.pos.x + a.f.x * A.GUN_FROM, a.pos.y + a.f.y * A.GUN_FROM, a.pos.z + 40 + a.f.z * A.GUN_FROM);
-    const g = Instance.TraceLine({ start: s, end: vadd(s, a.f, A.SIGHT_DIST), ignoreEntity: planeEnts(), ignorePlayers: true });
-    const d = g && g.didHit ? Math.max(200, g.fraction * A.SIGHT_DIST - 20) : A.SIGHT_DIST;
-    try { ac.gsight.Teleport({ position: vadd(s, a.f, d), angles: angOf(a.f) }); } catch (e) {}
+  if (ac.gsight && a.aim) {
+    const g = a.aim, d = Math.min(g.dist - 20, A.SIGHT_DIST * 3);
+    try { ac.gsight.Teleport({ position: vadd(g.s, g.dir, Math.max(200, d)), angles: angOf(g.dir) }); } catch (e) {}
   }
   if (ac.bsight) {
     if (a.bombs > 0) {
       // the ring sits on the line from the chase camera to the landing point, BSIGHT_RAISE above the ground, facing the camera and
       // scaled down by its distance: the pilot sees it on the landing point, players on the ground below see its undrawn back face
-      const l = bombLanding(a), h = Math.hypot(a.f.x, a.f.y) || 1, C = A.CAM_OFFSET;
-      const cam = v3(a.pos.x + a.f.x / h * C.x, a.pos.y + a.f.y / h * C.x, a.pos.z + C.z);
+      if (!a.land || a.tick % 4 === 0) a.land = bombLanding(a);
+      const l = a.land, h = Math.hypot(a.f.x, a.f.y) || 1, C = A.CAM_OFFSET, back = -(a.camBack || -C.x);
+      const cam = v3(a.pos.x + a.f.x / h * back, a.pos.y + a.f.y / h * back, a.pos.z + C.z);
       const d = v3(cam.x - l.x, cam.y - l.y, cam.z - l.z), D = vlen(d) || 1;
       const k = d.z > 1 ? Math.min(A.BSIGHT_RAISE / d.z, 0.6) : 0;
       const pitch = Math.acos(Math.max(-1, Math.min(1, d.z / D))) * 180 / Math.PI, yaw = Math.atan2(d.y, d.x) * 180 / Math.PI;
@@ -448,14 +456,88 @@ function dirOf(ang) {
   const p = ang.pitch * Math.PI / 180, y = ang.yaw * Math.PI / 180;
   return v3(Math.cos(p) * Math.cos(y), Math.cos(p) * Math.sin(y), -Math.sin(p));
 }
-function turnToward(f, d, maxRad) {
-  // heading and climb steered separately (no flips through the vertical); climb limited to +-75 degrees
-  const yaw = Math.atan2(f.y, f.x), pit = Math.asin(Math.max(-1, Math.min(1, f.z)));
-  const yd = Math.atan2(d.y, d.x), pd = Math.max(-1.31, Math.min(1.31, Math.asin(Math.max(-1, Math.min(1, d.z)))));
-  let dy = yd - yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-  const ny = yaw + Math.max(-maxRad, Math.min(maxRad, dy));
-  const np = pit + Math.max(-maxRad * 0.8, Math.min(maxRad * 0.8, pd - pit));
-  return v3(Math.cos(np) * Math.cos(ny), Math.cos(np) * Math.sin(ny), Math.sin(np));
+const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+function clampN(x, a, b) { return Math.max(a, Math.min(b, x)); }
+function vscale(a, k) { return v3(a.x * k, a.y * k, a.z * k); }
+function wrap180(x) { return ((x + 180) % 360 + 360) % 360 - 180; }
+function finiteV(a) { return !!a && Number.isFinite(a.x) && Number.isFinite(a.y) && Number.isFinite(a.z); }
+function angleBetween(a, b) { return Math.acos(clampN(vdot(a, b), -1, 1)); }
+// unit f toward unit d by at most maxRad (slerp; nudged off the exact opposite direction)
+function rotateToward(f, d, maxRad) {
+  let th = angleBetween(f, d);
+  if (th < 1e-5) return d;
+  if (th > 3.1) { d = vnorm(vadd(d, v3(-f.y * 0.1, f.x * 0.1, 0), 1)); th = angleBetween(f, d); }
+  const t = Math.min(1, maxRad / th), s = Math.sin(th);
+  return vnorm(vadd(vscale(f, Math.sin((1 - t) * th) / s), d, Math.sin(t * th) / s));
+}
+function clampPitch(f, limDeg) {
+  const L = Math.sin(limDeg * D2R);
+  if (Math.abs(f.z) <= L) return f;
+  const h = Math.hypot(f.x, f.y) || 1e-6, k = Math.cos(limDeg * D2R) / h;
+  return v3(f.x * k, f.y * k, Math.sign(f.z) * L);
+}
+// the same rotation as a, written continuous with the angles sent last tick (no +180/-180 yaw or roll jumps)
+function anglesNear(a, prev) {
+  if (!prev || !Number.isFinite(prev.pitch) || !Number.isFinite(prev.yaw) || !Number.isFinite(prev.roll)) return a;
+  const un = (x, q) => q + wrap180(x - q);
+  const p1 = un(a.pitch, prev.pitch), y1 = un(a.yaw, prev.yaw), r1 = un(a.roll, prev.roll);
+  const p2 = un(180 - a.pitch, prev.pitch), y2 = un(a.yaw + 180, prev.yaw), r2 = un(a.roll + 180, prev.roll);
+  const c1 = Math.abs(p1 - prev.pitch) + Math.abs(y1 - prev.yaw) + Math.abs(r1 - prev.roll);
+  const c2 = Math.abs(p2 - prev.pitch) + Math.abs(y2 - prev.yaw) + Math.abs(r2 - prev.roll);
+  return c2 < c1 - 1e-9 ? { pitch: p2, yaw: y2, roll: r2 } : { pitch: p1, yaw: y1, roll: r1 };
+}
+// turn rate (deg/s) for a speed: brisk when slow, wider when fast, mushy near the stall
+function turnRate(v) {
+  const A = CONFIG.AIR, S = A.STEER;
+  const r = clampN(S.RATE * Math.pow(S.REF_SPEED / Math.max(v, S.MIN_SPEED), 0.6), S.MIN_RATE, S.MAX_RATE);
+  return r * clampN((v - A.V_STALL) / (A.V_MIN - A.V_STALL), A.TURN_SLOW, 1);
+}
+// a digital key as a stick: toward want in tIn seconds, back toward 0 (or through it) in tOut
+function flightStick(cur, want, dt, tIn, tOut) {
+  const growing = want !== 0 && Math.sign(want) === Math.sign(cur || want) && Math.abs(want) >= Math.abs(cur);
+  const rate = 1 / Math.max(1e-3, growing ? tIn : tOut);
+  return cur + clampN(want - cur, -rate * dt, rate * dt);
+}
+// 0 inside the flight box, rising to 1 at the hard wall; looks 1.5 turn radii ahead so the turn home starts in time
+function boundsWeight(a) {
+  const A = CONFIG.AIR, B = A.BOUNDS;
+  const ahead = vadd(a.pos, a.f, B.AHEAD * a.speed / (Math.max(1, turnRate(a.speed)) * D2R));
+  let w = 0, kind = "";
+  for (const q of [a.pos, ahead]) {
+    const wxy = Math.max(Math.abs(q.x) - A.BOX_X, Math.abs(q.y) - A.BOX_Y) / B.HARD, wz = (q.z - A.ALT_MAX) / B.HARD_Z;
+    if (wxy > w) { w = wxy; kind = "xy"; }
+    if (wz > w) { w = wz; kind = "z"; }
+  }
+  return { w: clampN(w, 0, 1), kind };
+}
+function capHeading(f, aim, maxRad) {
+  const yf = Math.atan2(f.y, f.x), ya = Math.atan2(aim.y, aim.x);
+  const dy = Math.atan2(Math.sin(ya - yf), Math.cos(ya - yf));
+  if (Math.abs(dy) <= maxRad || Math.hypot(aim.x, aim.y) < 1e-3) return aim;
+  const y = yf + Math.sign(dy) * maxRad, pz = clampN(aim.z, -1, 1), h = Math.sqrt(1 - pz * pz);
+  return v3(Math.cos(y) * h, Math.sin(y) * h, pz);
+}
+function farOutside(pos) {
+  const A = CONFIG.AIR, F = A.BOUNDS.FAR;
+  return Math.abs(pos.x) > A.BOX_X + F || Math.abs(pos.y) > A.BOX_Y + F || pos.z > A.ALT_MAX + F;
+}
+// the chase camera's position and view (the crosshair), rebuilt the way FOLLOW_POSITION places it: followed point + offset turned
+// by the eye angles; guns converge on what the crosshair covers, within GUN_GIMBAL of the nose
+function gunAim(a, pawn) {
+  const A = CONFIG.AIR, F = A.CAM_FOLLOW;
+  let e; try { e = pawn.GetEyeAngles(); } catch (err) {}
+  const B = angleBasis({ pitch: e ? e.pitch : 0, yaw: e ? e.yaw : 0, roll: 0 });
+  const back = a.camBack || -A.CAM_OFFSET.x;
+  const cam = a.view === "cockpit" ? cockpitPos(a) : vadd(vadd(v3(a.pos.x + F.x, a.pos.y + F.y, a.pos.z + F.z), B.f, -back), B.u, A.CAM_OFFSET.z);
+  const L = A.GUN_RANGE + back;
+  const tr = Instance.TraceLine({ start: cam, end: vadd(cam, B.f, L), ignoreEntity: [a.ac.ent, pawn], traceHitboxes: true });
+  const hitD = tr && tr.didHit ? Math.max(back + 150, tr.fraction * L) : L;
+  const pt = vadd(cam, B.f, hitD);
+  const s = v3(a.pos.x + a.f.x * A.GUN_FROM, a.pos.y + a.f.y * A.GUN_FROM, a.pos.z + 40 + a.f.z * A.GUN_FROM);
+  const want = vnorm(v3(pt.x - s.x, pt.y - s.y, pt.z - s.z));
+  const g = A.GUN_GIMBAL * D2R;
+  const dir = angleBetween(a.f, want) <= g ? want : rotateToward(a.f, want, g);
+  return { s, dir, dist: Math.max(200, Math.min(A.SIGHT_DIST * 3, vlen(v3(pt.x - s.x, pt.y - s.y, pt.z - s.z)))) };
 }
 function planeOfEntity(e) {
   if (!e || !points) return undefined;
@@ -474,6 +556,8 @@ function startFlight(p, pawn, dest) {
   const base = dest ? dest.pos : ac.park;
   const f = v3(team === CT ? -1 : 1, 0, 0);
   p.air = { ac, pos: v3(base.x, base.y, base.z + A.SPAWN_ALT), f, speed: A.V_CRUISE * 0.9, throttle: 0.7, bank: 0, yawRate: 0,
+            phi: 0, stick: 0, roll: 0, angSent: undefined, propSent: undefined, camBack: -A.CAM_OFFSET.x, camSentBack: -A.CAM_OFFSET.x, camSentAt: -99,
+            pullUp: false, tick: 0, aim: undefined,
             nextGun: 0, bombs: A.BOMBS, rearmAt: 0, lastHitBy: -1, lastHitAt: -99, warned: 0, ammo: A.GUN_AMMO, reloadAt: 0,
             view: A.VIEW_DEFAULT, cam: undefined, camParent: undefined };
   try { pawn.DestroyWeapons(); pawn.GiveNamedItem("weapon_knife", false); } catch (e) {}
@@ -534,7 +618,8 @@ function hidePawn(pawn, hide) {
 function placePlane(p, pawn, snap) {
   const a = p.air, A = CONFIG.AIR, f = a.f;
   const yaw = Math.atan2(f.y, f.x) * 180 / Math.PI, pitch = Math.asin(Math.max(-1, Math.min(1, f.z))) * 180 / Math.PI;
-  const ang = { pitch: A.PITCH_SIGN * pitch, yaw: yaw + A.MODEL_YAW, roll: A.ROLL_SIGN * a.bank };
+  const ang = anglesNear({ pitch: A.PITCH_SIGN * pitch, yaw: yaw + A.MODEL_YAW, roll: A.ROLL_SIGN * (a.roll || 0) }, snap ? undefined : a.angSent);
+  a.angSent = ang;
   const vel = v3(f.x * a.speed, f.y * a.speed, f.z * a.speed);
   if (snap) a.ac.ent.Teleport({ position: a.pos, angles: ang, velocity: vel });
   else a.ac.ent.Move({ position: a.pos, angles: ang, velocity: vel });
@@ -544,7 +629,8 @@ function placePlane(p, pawn, snap) {
     a.lastSpin = now();
     const Bq = angleBasis(ang), h = ac.hub;
     const hp = v3(a.pos.x + Bq.f.x * h.x + Bq.l.x * h.y + Bq.u.x * h.z, a.pos.y + Bq.f.y * h.x + Bq.l.y * h.y + Bq.u.y * h.z, a.pos.z + Bq.f.z * h.x + Bq.l.z * h.y + Bq.u.z * h.z);
-    const pa = { pitch: ang.pitch, yaw: ang.yaw, roll: ang.roll + ac.spin };
+    const pa = anglesNear({ pitch: ang.pitch, yaw: ang.yaw, roll: ang.roll + ac.spin }, snap ? undefined : a.propSent);
+    a.propSent = pa;
     try { if (snap) ac.prop.Teleport({ position: hp, angles: pa, velocity: vel }); else ac.prop.Move({ position: hp, angles: pa, velocity: vel }); } catch (e) {}
   }
   const B = planeBasis(a);
@@ -573,52 +659,61 @@ function tickAir(p, pawn, dt, pressed, held) {
   if (!live(a.ac.ent)) { endFlight(p, pawn, false); return ""; }
   if (held & CSInputs.FORWARD) a.throttle = Math.min(1, a.throttle + A.ACCEL * dt);
   if (held & CSInputs.BACK) a.throttle = Math.max(0, a.throttle - A.ACCEL * dt);
-  // desired direction: where the pilot looks, pulled back toward the front when leaving the box
-  let d = dirOf(pawn.GetEyeAngles());
+  // aim: where the pilot looks (raw, every tick); near the walls / ceiling blended toward home, nose down in a stall
+  let aim = dirOf(pawn.GetEyeAngles());
+  if (!finiteV(aim)) aim = a.f;
   let prompt = "";
-  const out = Math.max(Math.abs(a.pos.x) - A.BOX_X, Math.abs(a.pos.y) - A.BOX_Y, 0);
-  if (out > 0) {
-    const c = vnorm(v3(-a.pos.x, -a.pos.y, 0)), h = vnorm(vadd(v3(d.x, d.y, 0), c, 2 + out / 200));
-    const pz = Math.max(-0.17, Math.min(0.34, d.z)), ph = Math.sqrt(1 - pz * pz);
-    d = v3(h.x * ph, h.y * ph, pz); prompt = "Leaving the front - turning back";
+  const bw = boundsWeight(a);
+  if (bw.w > 0) {
+    const home = vnorm(v3(-a.pos.x, -a.pos.y, A.BOUNDS.HOME_Z - a.pos.z));
+    // blended by heading and climb separately: a vector sum (or slerp) of two nearly opposite directions points straight up
+    const ya = Math.atan2(aim.y, aim.x), yh = Math.atan2(home.y, home.x), y = ya + bw.w * Math.atan2(Math.sin(yh - ya), Math.cos(yh - ya));
+    const pz = clampN(aim.z + (clampN(home.z, -0.3, 0.3) - aim.z) * bw.w, -1, 1), hz = Math.sqrt(1 - pz * pz);
+    aim = v3(Math.cos(y) * hz, Math.sin(y) * hz, pz);
+    prompt = bw.kind === "z" ? "Too high - engine starving" : "Leaving the front - turning back";
   }
-  if (a.pos.z > A.ALT_MAX) { d = vnorm(v3(d.x, d.y, Math.min(d.z, -0.2))); prompt = "Too high - engine starving"; }
-  if (a.speed < A.V_STALL) { d = vnorm(v3(d.x, d.y, Math.min(d.z, -0.5))); prompt = "STALL - nose down"; }
+  if (a.speed < A.V_STALL) { aim = vnorm(v3(aim.x, aim.y, Math.min(aim.z, -0.5))); prompt = "STALL - nose down"; }
   const gz = groundZ(a.pos.x, a.pos.y);
-  if (a.pos.z - gz < 320 && d.z < 0.05 && !prompt) prompt = "PULL UP";
-  // roll: A/D bank the wings (left = negative); banking into the mouse turn tightens it, a held bank turns on its own
-  const rollIn = out > 0 ? 0 : ((held & CSInputs.RIGHT) ? 1 : 0) - ((held & CSInputs.LEFT) ? 1 : 0);
-  const k = Math.max(A.TURN_SLOW, Math.min(1.15, a.speed / A.V_CRUISE));
-  const hd = Math.atan2(d.y, d.x) - Math.atan2(a.f.y, a.f.x);
-  const want = Math.atan2(Math.sin(hd), Math.cos(hd));                        // + = target to the left
-  const sb = Math.sin(a.bank * Math.PI / 180);
-  const into = Math.max(0, -Math.sign(want) * sb);                            // right bank (+) helps right turns (want < 0)
-  const f0 = a.f;
-  a.f = turnToward(a.f, d, A.TURN * k * (1 + A.BANK_BOOST * into + (out > 0 ? 1 : 0)) * Math.PI / 180 * dt);
-  if (out <= 0 && (rollIn !== 0 || Math.abs(a.bank) > 30)) {
-    const yr = -A.BANK_YAW * k * sb * Math.PI / 180 * dt;                       // coordinated turn from the bank alone
-    const c = Math.cos(yr), sn = Math.sin(yr);
-    a.f = vnorm(v3(a.f.x * c - a.f.y * sn, a.f.x * sn + a.f.y * c, a.f.z));
+  // look-ahead pull-up warning (trees, hangars, hills), a few planes per tick
+  a.tick++;
+  if ((a.tick + p.slot) % A.PULLUP_EVERY === 0) {
+    const tr = Instance.TraceLine({ start: a.pos, end: vadd(a.pos, a.f, a.speed * A.PULLUP_SECONDS), ignoreEntity: planeEnts(), ignorePlayers: true });
+    a.pullUp = !!(tr && tr.didHit);
   }
-  const yaw0 = Math.atan2(f0.y, f0.x), yaw1 = Math.atan2(a.f.y, a.f.x);
-  let dy = yaw1 - yaw0; if (dy > Math.PI) dy -= 2 * Math.PI; if (dy < -Math.PI) dy += 2 * Math.PI;
-  a.yawRate = a.yawRate * 0.85 + (dy / Math.max(dt, 1e-3)) * 0.15;
-  if (rollIn !== 0) a.bank = Math.max(-A.ROLL_MAX, Math.min(A.ROLL_MAX, a.bank + rollIn * A.ROLL_RATE * dt));
-  else {
-    const bankT = Math.max(-A.BANK_MAX, Math.min(A.BANK_MAX, -a.yawRate * 180 / Math.PI * 0.9));
-    a.bank += (bankT - a.bank) * Math.min(1, dt * 2.5);
-  }
+  if (!prompt && (a.pullUp || (a.pos.z - gz < 320 && a.f.z < 0.05))) prompt = "PULL UP";
+  // steer (Dogfight steerAim): the nose slerps toward the aim, proportional (GAIN) and capped by the turn rate
+  // a reversal is flown as a level turn: the aim is held within 90 degrees of the heading (two nearly opposite vectors make
+  // the slerp's great circle tip over the top, which a jet can loop but a biplane shouldn't)
+  aim = capHeading(a.f, aim, Math.PI / 2);
+  const S = A.STEER, R = A.ROLL, sdt = Math.max(dt, 1e-3);
+  const wMax = turnRate(a.speed) * D2R;
+  const th = angleBetween(a.f, aim);
+  const step = bw.w >= 1 ? wMax * sdt : Math.min(wMax * sdt, S.GAIN * th * sdt);
+  const yawOld = Math.atan2(a.f.y, a.f.x) * R2D;
+  const inside = Math.abs(a.f.z) <= Math.sin(S.PITCH_LIMIT * D2R) + 1e-9;
+  const nf = rotateToward(a.f, aim, step);
+  if (finiteV(nf)) a.f = inside ? clampPitch(nf, S.PITCH_LIMIT) : nf;
+  const yawRate = wrap180(Math.atan2(a.f.y, a.f.x) * R2D - yawOld) / sdt;
+  a.yawRate = yawRate * D2R;
+  a.bank += clampN(clampN(-yawRate * S.BANK_GAIN, -S.BANK_MAX, S.BANK_MAX) - a.bank, -S.BANK_RATE * sdt, S.BANK_RATE * sdt);
+  // A/D: a free roll on top of the bank (no auto level; the mouse steers exactly the same rolled or not)
+  const rollWant = bw.w >= 1 ? 0 : ((held & CSInputs.RIGHT) ? 1 : 0) - ((held & CSInputs.LEFT) ? 1 : 0);
+  a.stick = flightStick(a.stick, rollWant, sdt, R.IN, R.OUT);
+  if (a.stick) a.phi = wrap180(a.phi + a.stick * R.RATE * sdt);
+  a.roll = a.phi ? a.phi + a.bank * Math.cos(a.phi * D2R) : a.bank;
   // speed: throttle target, gravity along the flight path
   const target = A.V_MIN + (A.V_MAX - A.V_MIN) * a.throttle;
   a.speed += (target - a.speed) * Math.min(1, dt * 0.6) - A.DIVE_GAIN * a.f.z * dt;
   a.speed = Math.max(A.V_STALL * 0.7, Math.min(A.V_MAX * 1.25, a.speed));
   const np = vadd(a.pos, a.f, a.speed * dt);
-  np.x = Math.max(-A.BOX_X - 600, Math.min(A.BOX_X + 600, np.x)); np.y = Math.max(-A.BOX_Y - 600, Math.min(A.BOX_Y + 600, np.y));
-  // collision with the world along the step, or the ground
-  const tr = Instance.TraceLine({ start: a.pos, end: np, ignoreEntity: planeEnts(), ignorePlayers: true });
-  if ((tr && tr.didHit && !tr.startedInSolid) || np.z < gz + A.ALT_MIN * 0.25) { crashPilot(p, pawn); return ""; }
+  if (!finiteV(np) || farOutside(np)) { crashPilot(p, pawn); return ""; }
+  // collision with the world along the step (plus the nose), or the ground
+  const tr = Instance.TraceLine({ start: a.pos, end: vadd(np, a.f, A.NOSE), ignoreEntity: planeEnts(), ignorePlayers: true });
+  if ((tr && tr.didHit) || np.z < gz + A.ALT_MIN * 0.25) { crashPilot(p, pawn); return ""; }
   a.pos = np;
   placePlane(p, pawn, false);
+  easeCamera(a, dt, t);
+  a.aim = gunAim(a, pawn);
   if (a.view === "cockpit") { const cam = a.cam; if (cam && live(cam)) { try { cam.Move({ position: cockpitPos(a) }); } catch (e) {} } }
   // guns (belt; a short re-arm when empty)
   if (a.ammo <= 0 && t >= a.reloadAt) { a.ammo = A.GUN_AMMO; }
@@ -629,8 +724,8 @@ function tickAir(p, pawn, dt, pressed, held) {
       const gk = ["gun", "gun2", "gun3"][a.ac.si++ % 3];
       fire("tw_plane_" + gk + "_" + a.ac.ent.GetEntityName().slice("tw_plane_".length), "StartSound");
     }
-    const s = v3(a.pos.x + a.f.x * A.GUN_FROM, a.pos.y + a.f.y * A.GUN_FROM, a.pos.z + 40 + a.f.z * A.GUN_FROM);
-    const dir = vnorm(v3(a.f.x + gauss() * A.GUN_SPREAD, a.f.y + gauss() * A.GUN_SPREAD, a.f.z + gauss() * A.GUN_SPREAD));
+    const s = a.aim.s, d0 = a.aim.dir;
+    const dir = vnorm(v3(d0.x + gauss() * A.GUN_SPREAD, d0.y + gauss() * A.GUN_SPREAD, d0.z + gauss() * A.GUN_SPREAD));
     const g = Instance.TraceLine({ start: s, end: vadd(s, dir, A.GUN_RANGE), ignoreEntity: [a.ac.ent, pawn], traceHitboxes: true });
     if ((a.ammo % A.TRACER_EVERY) === 0 && a.ac.tracerEnts.length) {
       const te = a.ac.tracerEnts[a.ac.ti++ % a.ac.tracerEnts.length];
@@ -649,7 +744,9 @@ function tickAir(p, pawn, dt, pressed, held) {
   }
   // bombs
   if (a.bombs < A.BOMBS && t >= a.rearmAt) { a.bombs++; a.rearmAt = t + A.BOMB_REARM; }
-  if ((pressed & CSInputs.ATTACK2) && a.bombs > 0) {
+  let bombKey = (pressed & CSInputs.ATTACK2) !== 0;
+  try { bombKey = bombKey || pawn.WasInputJustPressed(CSInputs.ATTACK2); } catch (e) {}
+  if (bombKey && a.bombs > 0) {
     a.bombs--; if (a.rearmAt < t) a.rearmAt = t + A.BOMB_REARM;
     const be = a.ac.bombEnts.find(e => !bombs.some(b => b.ent === e));
     bombs.push({ pos: v3(a.pos.x, a.pos.y, a.pos.z - 20), vel: v3(a.f.x * a.speed, a.f.y * a.speed, a.f.z * a.speed), team: pawn.GetTeamNumber(), slot: p.slot, ent: be, ac: a.ac });
@@ -662,6 +759,7 @@ function tickAir(p, pawn, dt, pressed, held) {
   return prompt;
 }
 function planeBasis(a) {
+  if (a.angSent) { const B = angleBasis(a.angSent); return { f: B.f, r: vscale(B.l, -1), u: B.u }; }
   const f = a.f;
   let r = v3(f.y, -f.x, 0); const rl = vlen(r);
   r = rl < 1e-3 ? v3(0, -1, 0) : v3(r.x / rl, r.y / rl, 0);
@@ -684,9 +782,26 @@ function setView(p, pawn) {
       cam.Teleport({ position: cockpitPos(a) });
       cam.SetMode(CustomCameraMode.CONTROLLED_POSITION);
     } else {
-      cam.SetFollowConfig({ followEntity: a.ac.ent, followOffset: A.CAM_FOLLOW, cameraOffset: A.CAM_OFFSET, clipCameraOffset: true, cameraOffsetReturnStrength: 0.2 });
+      cam.SetFollowConfig({ followEntity: a.ac.ent, followOffset: A.CAM_FOLLOW, cameraOffset: v3(-(a.camBack || -A.CAM_OFFSET.x), A.CAM_OFFSET.y, A.CAM_OFFSET.z), clipCameraOffset: true, cameraOffsetReturnStrength: A.CAM_RETURN });
+      a.camSentBack = a.camBack; a.camSentAt = now();
       cam.SetMode(CustomCameraMode.FOLLOW_POSITION);
     }
+  } catch (e) {}
+}
+// chase camera eases back as the speed rises (Dogfight flightBoostCam): sent only when it moved CAM_MIN_STEP, at most every CAM_EVERY
+function easeCamera(a, dt, t) {
+  const A = CONFIG.AIR;
+  if (a.view === "cockpit" || !a.cam || !live(a.cam)) return;
+  const base = -A.CAM_OFFSET.x, fast = clampN((a.speed - A.V_CRUISE) / (A.V_MAX - A.V_CRUISE), 0, 1);
+  const want = base + (A.CAM_BACK_FAST - base) * fast;
+  a.camBack += (want - a.camBack) * (1 - Math.exp(-Math.max(0, dt) / A.CAM_TAU));
+  if (Math.abs(want - a.camBack) <= A.CAM_SNAP) a.camBack = want;
+  const moved = Math.abs(a.camBack - a.camSentBack);
+  if (moved < 1e-6 || t - a.camSentAt < A.CAM_EVERY - 1e-6 || (moved < A.CAM_MIN_STEP && a.camBack !== want)) return;
+  try {
+    a.cam.SetFollowConfig({ followEntity: a.ac.ent, followOffset: A.CAM_FOLLOW, cameraOffset: v3(-a.camBack, A.CAM_OFFSET.y, A.CAM_OFFSET.z),
+                            clipCameraOffset: true, cameraOffsetReturnStrength: A.CAM_RETURN });
+    a.camSentBack = a.camBack; a.camSentAt = t;
   } catch (e) {}
 }
 const NEEDLE = (deg) => "a" + (((Math.round(deg / 5) % 72) + 72) % 72);
@@ -700,7 +815,7 @@ function drawFlight(p, a, gz) {
   hSwap(p, "tw_n_alt", "rot", NEEDLE((altm % 1000) / 1000 * 360));
   hSwap(p, "tw_n_rpm", "rot", NEEDLE(-150 + 300 * (0.25 + 0.75 * a.throttle)));
   hSwap(p, "tw_card", "rot", NEEDLE(-hdg));
-  hSwap(p, "tw_n_bank", "rot", NEEDLE(a.bank));
+  hSwap(p, "tw_n_bank", "rot", NEEDLE(wrap180(a.roll || 0)));
   hText(p, "tw_alt_drum", String(Math.floor(altm / 1000)) + " " + String(Math.floor(altm % 1000 / 100)));
   hText(p, "tw_hdg_txt", ("00" + Math.round(hdg) % 360).slice(-3));
   hText(p, "tw_ammo_txt", ("000" + Math.max(0, a.ammo)).slice(-4));
@@ -781,9 +896,13 @@ function worldToSight(team, x, y) {
   return { u: (E - y) / (2 * E), v: (E - x) / (2 * E) };
 }
 function stepOf(t) { return Math.max(0, Math.min(CONFIG.TARGET_STEPS - 1, Math.floor(t * CONFIG.TARGET_STEPS))); }
+let peCache = null, peAt = -1;
 function planeEnts() {
+  const t = now();
+  if (peCache && peAt === t) return peCache;
   const out = [];
   if (points) for (const team of [T, CT]) for (const a of points.aircraft[team] || []) if (live(a.ent)) out.push(a.ent);
+  peCache = out; peAt = t;
   return out;
 }
 function groundZ(x, y) {
@@ -970,23 +1089,32 @@ function drawSight(p) {
 
 // ------------------------------------------------------------------ per tick
 let lastTick = 0;
+let errAt = -99;
+function logErr(where, e) { const t = now(); if (t - errAt > 2) { errAt = t; Instance.Msg("[tw] error in " + where + ": " + e + (e && e.stack ? " " + e.stack : "")); } }
 function think() {
-  const t = now(); const dt = Math.min(0.1, Math.max(0, t - lastTick)); lastTick = t;
-  if (!points) loadPoints();
-  tickShells();
-  tickBombs(dt);
-  tickTracers(dt);
-  tickAmbient();
-  tickUnlocks(t);
-  for (let s = 0; s < 64; s++) {
+  const t = now(); let dt = t - lastTick; lastTick = t;
+  if (!(dt > 0) || dt > 0.1) dt = 1 / 64;
+  Instance.SetNextThink(t);                 // scheduled first: an exception below can't stop the script for the rest of the round
+  try {
+    if (!points) loadPoints();
+    tickShells();
+    tickBombs(dt);
+    tickTracers(dt);
+    tickAmbient();
+    tickUnlocks(t);
+  } catch (e) { logErr("world", e); }
+  for (let s = 0; s < 64; s++) { try { thinkPlayer(s, t, dt); } catch (e) { logErr("player " + s, e); } }
+}
+function thinkPlayer(s, t, dt) {
+  {
     const ctl = Instance.GetPlayerController(s);
-    if (!ctl) continue;
+    if (!ctl) return;
     const pawn = live(ctl.GetPlayerPawn());
     const p = P(s);
     hClass(p, "tw_info", "show", t < (p.infoUntil || 0));
-    if (!pawn || !pawn.IsAlive()) { if (p.air) endFlight(p, pawn, true); if (p.inSight) leaveSight(p, pawn); hClass(p, "tw_target", "show", false); hClass(p, "tw_prompt", "show", false); continue; }
+    if (!pawn || !pawn.IsAlive()) { if (p.air) endFlight(p, pawn, true); if (p.inSight) leaveSight(p, pawn); hClass(p, "tw_target", "show", false); hClass(p, "tw_prompt", "show", false); return; }
     const team = pawn.GetTeamNumber();
-    if (team !== T && team !== CT) continue;
+    if (team !== T && team !== CT) return;
     if (p.team !== team) { leaveSeat(p); p.role = null; p.team = team; p.deployed = false; p.deployAt = t + CONFIG.LOBBY_FIRST; p.uniformDone = false; }
     uniform(p, pawn, team, t);
     const held = keys(pawn); const pressed = held & ~p.prevKeys; p.prevKeys = held;
@@ -1001,13 +1129,13 @@ function think() {
       hText(p, "tw_brief_l1", lines[0]); hText(p, "tw_brief_l2", lines[1]); hText(p, "tw_brief_l3", lines[2]);
       hText(p, "tw_brief_count", "Moving up in " + Math.max(0, p.deployAt - t).toFixed(0) + "s   (chat: !mortar  !infantry  !roles)");
       if (t >= p.deployAt) { hClass(p, "tw_brief", "show", false); p.first = false; deploy(p, pawn); }
-      continue;
+      return;
     }
     if (p.air) {
       const pr = tickAir(p, pawn, dt, pressed, held);
       hText(p, "tw_prompt_text", pr); hClass(p, "tw_prompt", "show", !!pr);
       hClass(p, "tw_toast", "show", t < p.toastUntil); hClass(p, "tw_banner", "show", t < p.bannerUntil);
-      continue;
+      return;
     }
     if (p.role === "infantry" && p.upgraded && (pressed & CSInputs.USE) && (held & CSInputs.WALK)) swapRifle(p, pawn);
     if (isBot(pawn)) tickBot(p, pawn, team, dt);
@@ -1057,7 +1185,6 @@ function think() {
     hClass(p, "tw_toast", "show", t < p.toastUntil);
     hClass(p, "tw_banner", "show", t < p.bannerUntil);
   }
-  Instance.SetNextThink(t);
 }
 
 // ------------------------------------------------------------------ events

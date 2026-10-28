@@ -319,6 +319,25 @@ Done this session (since the first delivery):
   (mtime 1793186256612); tw32_map_main.zip in the addon root. make_map.py: FOG_PARTICLES = False (rng calls kept), same fog values.
 - If drops remain: the 13 always-on smoke columns are next (same overdraw kind).
 
+## tw33 (28 Oct ~23:30): flight feel ported from Dogfight
+- User: Dogfight's (CS2 jet mode, C:\source2\dogfight) flight is very pleasant; port what fits. Installed via
+  C:\source2\dogfight\install_dogfight.bat (robocopy into content\ and game\csgo_addons\dogfight).
+- Ported (script only, CONFIG.AIR.STEER / ROLL / BOUNDS / NOSE / PULLUP_* / GUN_GIMBAL / CAM_*): steerAim (nose slerps toward the
+  raw eye aim, proportional GAIN 4, capped by turnRate = 62*(1150/v)^0.6 clamped 40..75 deg/s x TW's stall factor; pitch limit
+  75); bank from yaw rate (gain 0.8, max 65, rate 150 deg/s); A/D = free roll phi via flightStick (120 deg/s, in 0.15 / out 0.10,
+  no auto level) added on top of the bank, never changes the nose; anglesNear on the plane and propeller (no +-180 jumps; CT
+  spawned at yaw 180); boundsWeight look-ahead (1.5 turn radii) blending the aim home instead of the position clamp,
+  farOutside (+1500) = crash; crash trace extended by the nose (90) and startedInSolid now crashes; look-ahead PULL UP trace
+  (1.5 s, every 8th tick per plane); guns converge on the crosshair (camera ray rebuilt from the follow offset + eye angles,
+  clamped 3 deg around the nose), gun pip at that point; chase camera eases back 380 -> 440 with speed (sends >= 4 u, every
+  2 ticks, return 0.3); WasInputJustPressed for bombs; think(): SetNextThink first, try/catch per player (logs [tw] error),
+  dt guard; planeEnts() cached per tick; bomb landing every 4th tick.
+- Biplane-specific changes vs Dogfight: reversals flown as level turns (aim capped within 90 deg of the heading: slerp between
+  nearly opposite vectors went over the top); the bounds blend is by heading + climb (a sum/slerp of opposite directions
+  pointed straight up). Old BANK_YAW / BANK_BOOST / ROLL_MAX removed (banking no longer tightens the turn).
+- Mock (32 players 600 s): clean, flights avg 56 s (old 37 s with the same dumb mock pilots), plane gun hits up.
+- Not ported: Dogfight hit spheres with lag mercy (TW keeps prop-collision hitscan), missiles/AI, roll camera.
+
 ## Status 27 Oct (handover to a new workspace)
 - Last delivery tw24 (LODs). Out-of-repo state lived in the old container's out/ (generated vmaps, addon build) and is gone: restage the
   user's current vmap from the PC before any map work, rebuild the addon outputs from tools/ as needed, and prefer tools/patch_vmap.py
