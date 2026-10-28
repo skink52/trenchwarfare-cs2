@@ -1,6 +1,7 @@
 """Tripo/Mixamo-rigged soldier GLBs -> CS2 player models (agent skeleton, animgraph, hitboxes, ragdoll from a template).
 
 usage: python3 tools/soldiers.py <template dir> <addon out> <name>=<soldier.glb> [...] [--arms gb=<arms.glb> --arms de=<arms.glb>]
+Without --arms (the default since tw28) the template's own stock agent arms/sleeves are copied to models/tw/players/arms_stock/.
                                  [--side name=gb|de] [--preview dir]
 
 template dir: a CS2 agent rebuilt for ModelDoc (Octodad in mg_mario_party: *_cs2.vmdl with ragdoll joints, *_thirdperson_body.dmx,
@@ -380,6 +381,9 @@ if __name__ == '__main__':
     for side, path in arms.items():
         import arms as ARMS
         ARMS.build(T, path, side, out, preview)
+    if not arms:
+        st = os.path.join(out, MODEL_DIR, 'arms_stock'); os.makedirs(st, exist_ok=True)
+        shutil.copy(T.arms, os.path.join(st, 'arms.dmx')); shutil.copy(T.sleeves, os.path.join(st, 'sleeves.dmx'))
     for name, path in bodies:
         try:
             donor = None
@@ -387,7 +391,7 @@ if __name__ == '__main__':
             V, F, W, s = convert_body(T, path, name, out, donor)
         except SystemExit as e:
             print('SKIP', e); continue
-        write_vmdl(T, out, name, sides.get(name, 'gb' if 'gb' in name else 'de'))
+        write_vmdl(T, out, name, sides.get(name, 'gb' if 'gb' in name else 'de') if arms else 'stock')
         print(name, 'verts', len(V), 'tris', len(F), 'scale %.1f' % s, 'height %.1f' % V[:, 2].max())
         if preview:
             import preview_soldier

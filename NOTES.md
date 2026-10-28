@@ -260,6 +260,13 @@ Done this session (since the first delivery):
 - Delivery: script written straight to maps/scripts; vmap as `tw27_map_main.zip` in the addon root (67 MB vmap is over the
   30 MB direct-write limit) - user moves it to assets\tw and runs the unpack bat.
 
+## tw28 (28 Oct ~17:40): stock first-person arms
+- User: the Tripo arms (arms_gb/arms_de) looked bad in game - keep the default ones. The 4 soldier vmdls now point
+  firstperson_default_gloves_arms / firstperson_sleeves at `models/tw/players/arms_stock/arms.dmx|sleeves.dmx` = the Octodad template's
+  own stock agent (tm_phoenix) arms + sleeves, copied from mg_mario_party by `use_stock_arms.bat` in the addon root (the session could
+  not read that addon). The bat moves the custom arms models/materials to backups. soldiers.py: no --arms = stock arms (default now).
+  Both sides share the same (T agent) arms/gloves.
+
 ## Status 27 Oct (handover to a new workspace)
 - Last delivery tw24 (LODs). Out-of-repo state lived in the old container's out/ (generated vmaps, addon build) and is gone: restage the
   user's current vmap from the PC before any map work, rebuild the addon outputs from tools/ as needed, and prefer tools/patch_vmap.py
