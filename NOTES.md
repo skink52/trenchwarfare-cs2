@@ -267,6 +267,14 @@ Done this session (since the first delivery):
   not read that addon). The bat moves the custom arms models/materials to backups. soldiers.py: no --arms = stock arms (default now).
   Both sides share the same (T agent) arms/gloves.
 
+## tw29 (28 Oct ~18:40): bare-skin hands on our sleeves
+- User: try a CS2 bare hand on the generated sleeves. `tools/bare_hands.py <arms_stock/arms.dmx> <addon>` takes the stock agent's
+  glove_fullfinger hand (shape, weights, weapon fit; the template's bare forearm piece and its jointList dag dropped) and re-skins it:
+  generated texture on the glove's own UVs, shading from 3D (proximity occlusion between fingers, fingertip flush, mottling) so seams
+  don't show -> models/tw/players/hands_bare/arms.dmx + materials hands_bare. vmdls: arms = hands_bare, sleeves = arms_gb|arms_de
+  (Tripo sleeves + their materials restored from backups). soldiers.py `--bare-hands` (with --arms for the sleeves) reproduces this.
+  Written straight into the addon; arms_stock stays as the fallback (tw28).
+
 ## Status 27 Oct (handover to a new workspace)
 - Last delivery tw24 (LODs). Out-of-repo state lived in the old container's out/ (generated vmaps, addon build) and is gone: restage the
   user's current vmap from the PC before any map work, rebuild the addon outputs from tools/ as needed, and prefer tools/patch_vmap.py

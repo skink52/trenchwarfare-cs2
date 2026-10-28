@@ -1,7 +1,8 @@
 """Tripo/Mixamo-rigged soldier GLBs -> CS2 player models (agent skeleton, animgraph, hitboxes, ragdoll from a template).
 
 usage: python3 tools/soldiers.py <template dir> <addon out> <name>=<soldier.glb> [...] [--arms gb=<arms.glb> --arms de=<arms.glb>]
-Without --arms (the default since tw28) the template's own stock agent arms/sleeves are copied to models/tw/players/arms_stock/.
+With --bare-hands (tw29, in use) the hand is tools/bare_hands.py's skinned stock glove hand and only the sleeves come from --arms.
+Without --arms (tw28) the template's own stock agent arms/sleeves are copied to models/tw/players/arms_stock/.
                                  [--side name=gb|de] [--preview dir]
 
 template dir: a CS2 agent rebuilt for ModelDoc (Octodad in mg_mario_party: *_cs2.vmdl with ragdoll joints, *_thirdperson_body.dmx,
@@ -347,7 +348,7 @@ def write_dmx(tpl, path, name, V, N, cpos, cnorm, cuv, mats, sets, weights, jc_o
 
 
 # ---------------------------------------------------------------- vmdl
-def write_vmdl(T, out, name, side):
+def write_vmdl(T, out, name, side, bare=False):
     t = open(T.vmdl, encoding='utf-8').read()
     def swap(mesh, path):
         nonlocal t
@@ -355,7 +356,7 @@ def write_vmdl(T, out, name, side):
         assert t2 != t, 'no render mesh named ' + mesh
         t = t2
     swap('thirdperson_body', '%s/%s/%s_body.dmx' % (MODEL_DIR, name, name))
-    swap('firstperson_default_gloves_arms', '%s/arms_%s/arms.dmx' % (MODEL_DIR, side))
+    swap('firstperson_default_gloves_arms', '%s/hands_bare/arms.dmx' % MODEL_DIR if bare else '%s/arms_%s/arms.dmx' % (MODEL_DIR, side))
     swap('firstperson_sleeves', '%s/arms_%s/sleeves.dmx' % (MODEL_DIR, side))
     t = re.sub(r'(source_filename = ")[^"]*_tools_preview\.dmx(")', r'\g<1>%s/shared/tools_preview.dmx\g<2>' % MODEL_DIR, t)
     assert 'octodad' not in t.lower(), 'template name left in the vmdl'
@@ -367,13 +368,14 @@ if __name__ == '__main__':
     args = sys.argv[1:]
     tpl, out = args[0], args[1]
     T = Template(tpl)
-    bodies, arms, sides, preview = [], {}, {}, None
+    bodies, arms, sides, preview, bare = [], {}, {}, None, False
     i = 2
     while i < len(args):
         a = args[i]
         if a == '--arms': k, v = args[i + 1].split('=', 1); arms[k] = v; i += 2
         elif a == '--side': k, v = args[i + 1].split('=', 1); sides[k] = v; i += 2
         elif a == '--preview': preview = args[i + 1]; i += 2
+        elif a == '--bare-hands': bare = True; i += 1
         else: bodies.append(a.split('=', 1)); i += 1
     sh = os.path.join(out, MODEL_DIR, 'shared'); os.makedirs(sh, exist_ok=True)
     import shutil
@@ -381,6 +383,9 @@ if __name__ == '__main__':
     for side, path in arms.items():
         import arms as ARMS
         ARMS.build(T, path, side, out, preview)
+    if bare:
+        import bare_hands
+        bare_hands.main(T.arms, out)
     if not arms:
         st = os.path.join(out, MODEL_DIR, 'arms_stock'); os.makedirs(st, exist_ok=True)
         shutil.copy(T.arms, os.path.join(st, 'arms.dmx')); shutil.copy(T.sleeves, os.path.join(st, 'sleeves.dmx'))
@@ -391,7 +396,7 @@ if __name__ == '__main__':
             V, F, W, s = convert_body(T, path, name, out, donor)
         except SystemExit as e:
             print('SKIP', e); continue
-        write_vmdl(T, out, name, sides.get(name, 'gb' if 'gb' in name else 'de') if arms else 'stock')
+        write_vmdl(T, out, name, sides.get(name, 'gb' if 'gb' in name else 'de') if arms else 'stock', bare and bool(arms))
         print(name, 'verts', len(V), 'tris', len(F), 'scale %.1f' % s, 'height %.1f' % V[:, 2].max())
         if preview:
             import preview_soldier
