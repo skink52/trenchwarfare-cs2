@@ -142,6 +142,20 @@ for (let step = 0; step < SECONDS * 64; step++) {
     const a = ctls[Math.floor(Math.random() * N)];
     if (planes.length && a.pawn.hp > 0) hooks.bullet({ weapon: { GetOwner: () => a.pawn, GetData: () => ({ GetDamage: () => 88 }) }, position: { x: 0, y: 0, z: 0 }, hitEntity: planes[Math.floor(Math.random() * planes.length)] });
   }
+  // bots wandering onto a still-closed area's blocker must be sent back to the trench (CONFIG.BOTS leash)
+  if (step % 640 === 320) {
+    const locks = ['woodsopen', 'undergroundopen'].map(n => world.get(n)).filter(e => e && !e.removed);
+    const bots = ctls.filter(c => c.bot && c.pawn.hp > 0 && Math.abs(c.pawn.pos.z) < 400);
+    if (locks.length && bots.length) {
+      const c = bots[Math.floor(Math.random() * bots.length)], L = locks[Math.floor(Math.random() * locks.length)];
+      c.pawn.pos = { x: L.pos.x + 40, y: L.pos.y - 40, z: L.pos.z };
+      later.push({ at: time + 4.5, fn: () => {
+        if (L.removed || c.pawn.hp <= 0) return;
+        const d = Math.hypot(c.pawn.pos.x - L.pos.x, c.pawn.pos.y - L.pos.y);
+        if (d > 300) stats.leashOk = (stats.leashOk || 0) + 1; else throw new Error('bot left at the ' + L.name + ' blocker');
+      } });
+    }
+  }
   // random rifle kills between infantry
   if (step % 97 === 0) {
     const a = ctls[Math.floor(Math.random() * N)], v = ctls[Math.floor(Math.random() * N)];
@@ -153,4 +167,4 @@ fs.unlinkSync(tmp);
 const D = globalThis.__twDebug; const rc = {}; for (const p of D.players.values()) rc[p.team + ':' + p.role] = (rc[p.team + ':' + p.role] || 0) + 1;
 console.log('roles', JSON.stringify(rc), 'crews', JSON.stringify(D.crews[3].map(c => [c.a, c.b, c.loaded, !!c.target, c.impacts.length])));
 const roles = {}; // count from HUD would need introspection; report activity instead
-console.log(JSON.stringify({ hud: stats.hud, vars: stats.vars, fires: stats.fires, dmg: stats.dmg, kills: stats.kills, teleports: stats.teleports, moves: stats.moves, cam: stats.cam, flyTicks: stats.flyTicks, planeHits: stats.planeHits, setModel: stats.setmodel, removed: stats.removed, mortarFireAttempts: fired, msgs: stats.msgs.slice(0, 3) }));
+console.log(JSON.stringify({ hud: stats.hud, vars: stats.vars, fires: stats.fires, dmg: stats.dmg, kills: stats.kills, teleports: stats.teleports, moves: stats.moves, cam: stats.cam, flyTicks: stats.flyTicks, planeHits: stats.planeHits, setModel: stats.setmodel, removed: stats.removed, mortarFireAttempts: fired, leashOk: stats.leashOk, msgs: stats.msgs.slice(0, 3) }));

@@ -81,7 +81,10 @@ const CONFIG = {
   ],
   CVARS: ["mp_respawn_on_death_t 1", "mp_respawn_on_death_ct 1", "mp_respawn_immunitytime 0", "mp_freezetime 0",
           "mp_roundtime 60", "mp_buy_anywhere 0", "mp_buytime 0", "mp_death_drop_gun 0", "mp_weapons_allow_map_placed 1",
-          "mp_free_armor 0", "mp_solid_teammates 1", "bot_quota_mode normal"],
+          "mp_free_armor 0", "mp_solid_teammates 1", "bot_quota_mode normal", "mp_give_player_c4 0"],
+  // bots (infantry only; the map's nav seeds cover the lobby, trenches, woods clearings and tunnels): a bot that hangs around a
+  // still-closed area's blocker (woodsopen / undergroundopen) for LEASH_TIME is sent back to a fire-trench post
+  BOTS: { LEASH: 170, LEASH_Z: 160, LEASH_TIME: 3 },
 };
 const T = 2, CT = 3;
 const tagOf = (team) => (team === T ? "t" : "ct");
@@ -114,7 +117,11 @@ function findList(prefix, max) {
   return out;
 }
 function loadPoints() {
-  points = { trench: {}, heal: {}, plane: {}, pit: {}, seatA: {}, seatB: {}, aircraft: {} };
+  points = { trench: {}, heal: {}, plane: {}, pit: {}, seatA: {}, seatB: {}, aircraft: {}, locks: {} };
+  for (const u of CONFIG.UNLOCKS) {
+    points.locks[u.name] = [];
+    for (const e of Instance.FindEntitiesByName(u.name)) { try { if (e.IsValid()) points.locks[u.name].push(e.GetAbsOrigin()); } catch (err) {} }
+  }
   for (const team of [T, CT]) {
     const tg = tagOf(team);
     points.trench[team] = findList("trench_" + tg + "_", 64).map(e => ({ pos: e.GetAbsOrigin(), ang: e.GetAbsAngles(), used: 0 }));
@@ -256,9 +263,25 @@ function setRole(p, role, team) {
   p.role = role;
   if (role === "air") { p.lives = CONFIG.AIR_LIVES; p.flown++; }
 }
+function isBot(pawn) { try { return pawn.GetPlayerController().IsBot(); } catch (e) { return false; } }
+function nearLock(o) {
+  const B = CONFIG.BOTS;
+  for (const u of CONFIG.UNLOCKS) {
+    if (unlocked.has(u.name)) continue;
+    for (const q of (points.locks[u.name] || [])) if (dist2(o, q) < B.LEASH && Math.abs(o.z - q.z) < B.LEASH_Z) return true;
+  }
+  return false;
+}
+function tickBot(p, pawn, team, dt) {
+  if (p.role !== "infantry" || !nearLock(pawn.GetAbsOrigin())) { p.leashT = 0; return; }
+  p.leashT = (p.leashT || 0) + dt;
+  if (p.leashT < CONFIG.BOTS.LEASH_TIME) return;
+  p.leashT = 0;
+  const dest = pickTrench(team, pawn);
+  if (dest) pawn.Teleport({ position: v3(dest.pos.x, dest.pos.y, dest.pos.z + 4), angles: dest.ang, velocity: v3(0, 0, 0) });
+}
 function chooseRole(p, pawn, team) {
-  const isBot = (() => { try { return pawn.GetPlayerController().IsBot(); } catch (e) { return false; } })();
-  if (isBot) { if (p.role !== "infantry") setRole(p, "infantry", team); return; }
+  if (isBot(pawn)) { if (p.role !== "infantry") setRole(p, "infantry", team); return; }
   if (p.role === "air" && p.lives > 0) return;
   if (p.role === "air") { setRole(p, Math.random() < 0.5 && seatFree(team) ? "mortar" : "infantry", team); return; }
   if (!p.role) {
@@ -987,6 +1010,7 @@ function think() {
       continue;
     }
     if (p.role === "infantry" && p.upgraded && (pressed & CSInputs.USE) && (held & CSInputs.WALK)) swapRifle(p, pawn);
+    if (isBot(pawn)) tickBot(p, pawn, team, dt);
     p.healing = false;
     const hp = points.heal[team] || [];
     const o = pawn.GetAbsOrigin();

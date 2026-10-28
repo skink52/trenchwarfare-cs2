@@ -246,6 +246,20 @@ Done this session (since the first delivery):
   blockers were prop_statics in vis group woodsopen: `tools/patch_unlocks.py` turns those into prop_dynamic targetname woodsopen.
 - Built from the user's vmap of 27 Oct 19:17 (mtime 1793090872963), tw25 already applied. Mock 600 s clean (both areas opened).
 
+## tw27 (28 Oct ~16:45): bot support
+- Map (`tools/patch_bots.py <user vmap> <out>`, applied onto the user's vmap of 27 Oct 20:13, mtime 1793094011927): 25 func_nav_markup
+  WALKABLESEED volumes (closed toolsnavattribute box child, vis group `tw_nav`, re-run replaces them): lobby (one per team spawn),
+  trench_<tg>_1/5/8/12/15/16/18/20, woods clearing (x +-1210, y 3700/4150), tunnel landings and the mine chamber. Before this only the
+  lobby could get nav (seeded by the spawns), so bots deployed to the trenches stood still. Removed the 2 func_bomb_target (stray bomb
+  sites in no man's land: defuse scenario, C4). The untagged second info_map_parameters (512,328,32, buying 0) is still in the map.
+- Nav is built by the map compile (`-nav`, build_maps.ps1). Unverified: whether nav gen treats the woodsopen/undergroundopen
+  prop_dynamics as solid (if not, the tunnels join both sides' nav) and whether the woods ladder gets a nav link. Check with `nav_edit 1`.
+- Script: CONFIG.BOTS leash: a bot within 170 u (dz 160) of a still-closed area's blocker for 3 s is teleported to a fire-trench post
+  (blocker positions cached in loadPoints as points.locks). `mp_give_player_c4 0` added to CVARS. Mock: bots dropped on blockers
+  every 10 s must be back > 300 u away 4.5 s later (leashOk); 24 players 600 s clean, tsc clean.
+- Delivery: script written straight to maps/scripts; vmap as `tw27_map_main.zip` in the addon root (67 MB vmap is over the
+  30 MB direct-write limit) - user moves it to assets\tw and runs the unpack bat.
+
 ## Status 27 Oct (handover to a new workspace)
 - Last delivery tw24 (LODs). Out-of-repo state lived in the old container's out/ (generated vmaps, addon build) and is gone: restage the
   user's current vmap from the PC before any map work, rebuild the addon outputs from tools/ as needed, and prefer tools/patch_vmap.py
