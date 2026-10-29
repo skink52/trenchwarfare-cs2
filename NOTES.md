@@ -370,3 +370,7 @@ Done this session (since the first delivery):
 - Delivered tw34_content_01.zip (115 files: new *_lodNd.smd + vmdls) + tw34_map_main.zip (from the user's 29 Oct vmap). First rebuild still
   packed 5603771 charts: the zips had not been applied. The 115 model files were then written straight into the addon; the vmap (wire
   props) still needs tw34_map_main.zip via the bat.
+- tw32_map_main.zip was never applied (applied list ends at tw31; the user kept editing the pre-tw32 vmap), so tw34_map_main.zip
+  was rebuilt from the user's 29 Oct vmap with patch_fog.py (19 fog particles out, cubemap fog start 250) + patch_lightmap.py and
+  written straight to assets\tw. tw32_map_main.zip is superseded. build_maps.ps1 bakes at -lightmapMaxResolution 1024: build this
+  map in Hammer (2048) until the chart count is known.
