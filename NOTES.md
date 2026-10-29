@@ -374,3 +374,6 @@ Done this session (since the first delivery):
   was rebuilt from the user's 29 Oct vmap with patch_fog.py (19 fog particles out, cubemap fog start 250) + patch_lightmap.py and
   written straight to assets\tw. tw32_map_main.zip is superseded. build_maps.ps1 bakes at -lightmapMaxResolution 1024: build this
   map in Hammer (2048) until the chart count is known.
+- tw34 build result (user, 29 Oct 12:40, Hammer, 2048): OK in 19 min. Charting 36643 -> 24754 unique meshes, packing 5,603,771 ->
+  1,373,935 charts (-75%), 2048 x 2048 baked (packer scale 0.049 vs 0.105 at 4096 before), lightmapping 381 -> 255 s, no OOM.
+  Nav 44160 areas; "Unconnected ladder #1/#2 bottom" at the woods ladders (+-1716, 2904, -72) - bots won't use them yet.
