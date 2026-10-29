@@ -352,3 +352,19 @@ Done this session (since the first delivery):
 2. Fill the 3D skybox (distant terrain ring, tree lines beyond the map edge) + skybox_reference in the main map.
 3. Script: weapons per team (above), arcade biplane flight.
 4. More detail pass; verify (check_mesh, previews, mock, tsc); zip + bat to `C:\source1\cs2port\assets\tw\`; update project doc.
+
+## tw34 (29 Oct ~11:45): lightmap bake out of memory, packing creep
+- User: build fails with OUT OF MEMORY (new), and packing needs ever higher lightmapMaxResolution (2048 -> 4096). Log: "Charting 36643
+  unique meshes", "Packing 5603771 UV charts", vrad3 `FATAL ERROR: OUT OF MEMORY ... 2147483648` at "Welding seams".
+- Cause: the baker charts every LOD x material of every bakelighting-1 instance (36643 ~ 33.8k LOD draws + world), and each
+  disconnected piece is a chart. tw31's decimated LODs wrote per-face corners (re-projected UVs, corner normals), so every triangle was
+  its own chart: estimated charts 0.62M before tw31 -> 3.9M after (e.g. sandbag_wall_128 LODs 188 -> 2883 charts per instance).
+- `tools/lod_decimate.py`: corners shared per cluster and LOD0 chart (area-weighted mean UV and normal; LOD0 seams kept, UV stretch
+  unchanged vs tw31). `--lightmapped-from <vmap>`: lightmapped props keep the two LODs that draw fewest triangles (best_pair, bands
+  weighted by threshold^2); probe-lit props keep all. Run: `lod_decimate.py <addon> <out> <the 35 model dirs> --keep-lod1
+  wire_fence_a,wire_fence_b,wire_coil --lightmapped-from <user vmap>`.
+- `tools/patch_lightmap.py`: 18 wire props the user's map had at bakelighting 1 (wire_fence_b 8, wire_fence_a 1, wire_coil 9,
+  ~2k charts each) -> 0.
+- Estimate 3.9M -> 0.82M charts (pre-tw31 0.62M). Remaining big LOD0 chart counts come from generator UV islands (revet_iron_128 550,
+  sandbag_wall_128 188, duckboard_128 162 per instance; position-only weld gives 25/47/27) and the ext vehicles (Renault FT 12.8k).
+- Delivered tw34_content_01.zip (115 files: new *_lodNd.smd + vmdls) + tw34_map_main.zip (from the user's 29 Oct vmap).
