@@ -367,4 +367,6 @@ Done this session (since the first delivery):
   ~2k charts each) -> 0.
 - Estimate 3.9M -> 0.82M charts (pre-tw31 0.62M). Remaining big LOD0 chart counts come from generator UV islands (revet_iron_128 550,
   sandbag_wall_128 188, duckboard_128 162 per instance; position-only weld gives 25/47/27) and the ext vehicles (Renault FT 12.8k).
-- Delivered tw34_content_01.zip (115 files: new *_lodNd.smd + vmdls) + tw34_map_main.zip (from the user's 29 Oct vmap).
+- Delivered tw34_content_01.zip (115 files: new *_lodNd.smd + vmdls) + tw34_map_main.zip (from the user's 29 Oct vmap). First rebuild still
+  packed 5603771 charts: the zips had not been applied. The 115 model files were then written straight into the addon; the vmap (wire
+  props) still needs tw34_map_main.zip via the bat.
