@@ -26,3 +26,5 @@ Free for non-commercial use: copy, change, share and run it, including on game s
 ## Shared files
 
 `test/point_script.d.ts`, `tools/bake.py`, `tools/check_mesh.py`, `tools/dmx.py`, `tools/dmx9.py`, `tools/geo.py`, `tools/lod_decimate.py`, `tools/noise.py`, `tools/p_sandbag.py`, `tools/render.py`, `tools/shaders.py`, `tools/vmaplib.py`, `tools/vmesh.py`, `tools/vpkdir.py`, `tools/weld_cracks.py` are master copies from [cs2mapping](https://github.com/skink52/cs2mapping) (`create/libsync.json`). Change them there and run `python3 create/libsync.py push`, or if a fix lands here first, `libsync.py pull` it into cs2mapping. `libsync.py check` shows drift.
+
+`sync_repo.sh` (working folder → this checkout) never deletes, copies only newer changed files, and never touches README.md, NOTES.md, the licences or the shared files above: edit those in the checkout.
