@@ -377,3 +377,8 @@ Done this session (since the first delivery):
 - tw34 build result (user, 29 Oct 12:40, Hammer, 2048): OK in 19 min. Charting 36643 -> 24754 unique meshes, packing 5,603,771 ->
   1,373,935 charts (-75%), 2048 x 2048 baked (packer scale 0.049 vs 0.105 at 4096 before), lightmapping 381 -> 255 s, no OOM.
   Nav 44160 areas; "Unconnected ladder #1/#2 bottom" at the woods ladders (+-1716, 2904, -72) - bots won't use them yet.
+
+## tw35 (29 Oct ~12:55): bots off by default
+- User: FPS 200 with a drop to ~71 every ~0.5 s on a local listen server; `bot_kick` fixed it (mock profile of the script: no
+  periodic load). `CONFIG.BOTS_ON false` (default): OnActivate runs `bot_quota 0` + `bot_kick`. Set true to keep the server's
+  bot_quota. Bot support (nav seeds, leash) stays in place. Script only - written to maps\scripts.

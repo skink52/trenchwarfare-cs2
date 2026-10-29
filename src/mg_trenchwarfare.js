@@ -94,6 +94,8 @@ const CONFIG = {
   // bots (infantry only; the map's nav seeds cover the lobby, trenches, woods clearings and tunnels): a bot that hangs around a
   // still-closed area's blocker (woodsopen / undergroundopen) for LEASH_TIME is sent back to a fire-trench post
   BOTS: { LEASH: 170, LEASH_Z: 160, LEASH_TIME: 3 },
+  // off by default (their pathing over the 44k-area nav gave a frame hitch every ~0.5 s on a listen server); true = keep the server's bot_quota
+  BOTS_ON: false,
 };
 const T = 2, CT = 3;
 const tagOf = (team) => (team === T ? "t" : "ct");
@@ -1190,6 +1192,7 @@ function thinkPlayer(s, t, dt) {
 // ------------------------------------------------------------------ events
 Instance.OnActivate(() => {
   for (const c of CONFIG.CVARS) Instance.ServerCommand(c);
+  if (!CONFIG.BOTS_ON) { Instance.ServerCommand("bot_quota 0"); Instance.ServerCommand("bot_kick"); }
   points = null; lastTick = now();
   Instance.SetThink(think);
   Instance.SetNextThink(now());
