@@ -22,3 +22,7 @@ Layout constants (trench lines, mortar pits, hangars...) live in `tools/layout.p
 ## Licence
 
 Free for non-commercial use: copy, change, share and run it, including on game servers (donation/VIP servers are fine). Not to be sold, paywalled or built into a paid product or service. Code: [PolyForm Noncommercial 1.0.0](LICENSE). Art, models, sounds and maps: [CC BY-NC 4.0](LICENSE-CC-BY-NC-4.0.txt). See [LICENSE](LICENSE) for third-party parts that keep their own terms.
+
+## Shared files
+
+`test/point_script.d.ts`, `tools/bake.py`, `tools/check_mesh.py`, `tools/dmx.py`, `tools/dmx9.py`, `tools/geo.py`, `tools/lod_decimate.py`, `tools/noise.py`, `tools/p_sandbag.py`, `tools/render.py`, `tools/shaders.py`, `tools/vmaplib.py`, `tools/vmesh.py`, `tools/vpkdir.py`, `tools/weld_cracks.py` are master copies from [cs2mapping](https://github.com/skink52/cs2mapping) (`create/libsync.json`). Change them there and run `python3 create/libsync.py push`, or if a fix lands here first, `libsync.py pull` it into cs2mapping. `libsync.py check` shows drift.
