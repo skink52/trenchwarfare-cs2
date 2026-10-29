@@ -18,3 +18,7 @@ Needs Python 3 with numpy, scipy, Pillow; Node 18+ for the tests.
 | tests | `node test/mock.mjs 32 120` (mock cs_script run), `cd test && tsc -p tsconfig.json` (types) |
 
 Layout constants (trench lines, mortar pits, hangars...) live in `tools/layout.py` and are shared by the map, the renders and the script data.
+
+## Licence
+
+Free for non-commercial use: copy, change, share and run it, including on game servers (donation/VIP servers are fine). Not to be sold, paywalled or built into a paid product or service. Code: [PolyForm Noncommercial 1.0.0](LICENSE). Art, models, sounds and maps: [CC BY-NC 4.0](LICENSE-CC-BY-NC-4.0.txt). See [LICENSE](LICENSE) for third-party parts that keep their own terms.
