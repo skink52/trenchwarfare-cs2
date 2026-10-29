@@ -320,8 +320,8 @@ Done this session (since the first delivery):
 - If drops remain: the 13 always-on smoke columns are next (same overdraw kind).
 
 ## tw33 (28 Oct ~23:30): flight feel ported from Dogfight
-- User: Dogfight's (CS2 jet mode, C:\source2\dogfight) flight is very pleasant; port what fits. Installed via
-  C:\source2\dogfight\install_dogfight.bat (robocopy into content\ and game\csgo_addons\dogfight).
+- User: Dogfight's (CS2 jet mode, C:\source2\projects\dogfight) flight is very pleasant; port what fits. Installed via
+  C:\source2\projects\dogfight\install_dogfight.bat (robocopy into content\ and game\csgo_addons\dogfight).
 - Ported (script only, CONFIG.AIR.STEER / ROLL / BOUNDS / NOSE / PULLUP_* / GUN_GIMBAL / CAM_*): steerAim (nose slerps toward the
   raw eye aim, proportional GAIN 4, capped by turnRate = 62*(1150/v)^0.6 clamped 40..75 deg/s x TW's stall factor; pitch limit
   75); bank from yaw rate (gain 0.8, max 65, rate 150 deg/s); A/D = free roll phi via flightStick (120 deg/s, in 0.15 / out 0.10,

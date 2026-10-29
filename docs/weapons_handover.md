@@ -21,10 +21,10 @@ Shared materials: `materials/models/weapons/ww1/scope/{scope,brass,glass}.vmat` 
    `scripts\weapons.vdata`, `scripts\ww1_weapons.js`, `models\weapons\ww1\*`, `materials\models\weapons\ww1\*`, `maps\testing.vmap`.
    To move the weapons into the real map's addon, copy `scripts\weapons.vdata`, `scripts\ww1_weapons.js`, `models\weapons\ww1` and
    `materials\models\weapons\ww1` into that addon's content root and add a point_script pointing at `scripts/ww1_weapons.js`.
-2. `C:\source2\trenchwarfare assets` — source models (`*.glb`, `lee enfield\`, `Gewehr98\`, `mondragon-m1908\`), the original decompiled
+2. `C:\source2\projects\trenchwarfare` — source models (`*.glb`, `lee enfield\`, `Gewehr98\`, `mondragon-m1908\`), the original decompiled
    `weapons.vdata`, `stock\` (Source 2 Viewer "Decompile & Export" of the stock weapon vmdl_c files: ssg08, awp, glock18, hkp2000, scar20,
    g3sg1 — vmdl + body/anim/hull DMX + `_mag.vmdl`), and `tools\` (the builder, same files as `tools/weapons/` in this repo).
-3. Optionally `C:\source2\trenchwarfare assets\build_out` as the builder's output root before copying into the addon.
+3. Optionally `C:\source2\projects\trenchwarfare\build_out` as the builder's output root before copying into the addon.
 
 ## How it works
 
@@ -41,7 +41,7 @@ Shared materials: `materials/models/weapons/ww1/scope/{scope,brass,glass}.vmat` 
 - Known limits: first-person hand placement comes from the arms animation (can't fix per weapon); the Luger's toggle translates like a slide;
   the Gewehr has an internal mag so its reload shows an invisible stub mag.
 
-## Builder (`tools/weapons/`, needs python3 + numpy + Pillow; copy of `C:\source2\trenchwarfare assets\tools`)
+## Builder (`tools/weapons/`, needs python3 + numpy + Pillow; copy of `C:\source2\projects\trenchwarfare\tools`)
 
 `python build_weapon.py <cfg>.json` → `<out>/models/weapons/ww1/<name>/` (vmdl, `_body.dmx`, `_hull.dmx`, `_mag.vmdl` + mesh/hull, copied stock
 anim DMX) plus `<name>_debug_side/top.png` overlays against the stock mesh. For GLB inputs it also writes one vmat per glTF material with the
